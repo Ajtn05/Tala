@@ -45,7 +45,9 @@ Tala is free, open source, and runs **Whisper Large v3 Turbo locally**. No Tala 
 
 ## Get started
 
-[Download Tala](https://github.com/Ajtn05/Tala/releases/latest) for Apple Silicon macOS or Linux x86_64. See the [1.1.0 release notes](docs/releases/v1.1.0.md) for changes and platform requirements. You can also [build from source](#build-from-source).
+[Download Tala](https://github.com/Ajtn05/Tala/releases/latest) for Apple Silicon macOS or Linux x86_64. See the [1.2.0 release notes](docs/releases/v1.2.0.md) for changes and platform requirements. You can also [build from source](#build-from-source).
+
+Tala 1.2.0 includes FFmpeg, ffprobe, and yt-dlp. Once Whisper is set up, you can import files and supported links without installing media tools separately.
 
 ### macOS
 
@@ -53,18 +55,11 @@ Tala is free, open source, and runs **Whisper Large v3 Turbo locally**. No Tala 
 2. **Set up Whisper.** In **Settings**, choose an existing compatible model or select **Download model (1.6 GB)**. Tala verifies the model before use.
 3. **Make a transcript.** Open **New transcription** to record audio, drop a file, or paste a link. Grant audio capture and Documents access when macOS prompts you.
 
-For file and URL imports, install the optional tools with Homebrew and use **Settings → Media tools → Check again**.
-
-```sh
-brew install ffmpeg         # Local files, including ffprobe
-brew install ffmpeg yt-dlp  # Local files and supported URLs
-```
-
 On macOS, transcripts live in `~/Documents/Tala/`. Settings and model downloads live in `~/Library/Application Support/Tala/`.
 
 ### Linux
 
-Extract `tala-linux-x86_64.tar.gz` or [build the CLI](#build-from-source). Then download the verified model and record or import a file. File imports need FFmpeg, and URL imports also need yt-dlp.
+Extract `tala-linux-x86_64.tar.gz` or [build the CLI](#build-from-source). Keep the extracted `tala-tools` folder next to the executable.
 
 ```sh
 ./tala --ensure-model
@@ -149,8 +144,9 @@ Tala uses Whisper Large v3 Turbo, with Metal acceleration on macOS and CPU infer
 
 Install Go 1.25 or later, CMake, pkg-config, and the native compiler toolchain.
 On Debian or Ubuntu, install `libasound2-dev` for microphone capture. The build
-uses pinned versions of PortAudio and whisper.cpp. Media imports need FFmpeg and
-ffprobe. URL imports also need yt-dlp.
+uses pinned versions of PortAudio and whisper.cpp. If you run the standalone CLI
+from `make build`, file imports use system FFmpeg and ffprobe. Link imports also
+use system yt-dlp.
 
 ```sh
 make setup
@@ -160,7 +156,9 @@ make build
 
 On macOS 14.2 or later, use `make bundle` and open `dist/Tala.app`. The
 app requests microphone or system audio access when recording. Use
-`make package` to create a disk image or Linux archive.
+`make package` to create a disk image or Linux archive. Packaging downloads and
+verifies the media tools and builds FFmpeg from source. On Debian or Ubuntu,
+install `libssl-dev`, `zlib1g-dev`, `nasm`, and `unzip` to build the archive.
 
 ## Recording design
 
@@ -172,4 +170,4 @@ conversion, and cancellation on storage failure. To test real inference with
 the upstream speech fixture, set `TALA_TEST_MODEL` before running `make test`.
 
 Application code uses the [MIT license](LICENSE). Third-party components retain their own
-licenses. See the license files included with the macOS bundle.
+licenses. See the notices and FFmpeg source included with the packages.

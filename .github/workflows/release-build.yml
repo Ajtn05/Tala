@@ -34,29 +34,45 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake pkg-config libasound2-dev ffmpeg
+          sudo apt-get install -y cmake pkg-config libasound2-dev ffmpeg nasm libssl-dev zlib1g-dev unzip
       - name: Build, test, and package
         run: |
           make setup
           make test
           make test-ui
           make package
-      - name: Verify the macOS app icon in the disk image
-        if: runner.os == 'macOS'
+      - name: Smoke-test the release package
         run: |
-          mount="$(mktemp -d)"
-          hdiutil attach -readonly -nobrowse -mountpoint "$mount" dist/Tala.dmg
-          trap 'hdiutil detach "$mount"' EXIT
-          contents="$mount/Tala.app/Contents"
-          icon="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$contents/Info.plist")"
-          iconutil -c iconset -o "$RUNNER_TEMP/Tala.iconset" "$contents/Resources/$icon"
-      - name: Smoke-test Linux archive
-        if: runner.os == 'Linux'
-        run: |
-          tar -xzf dist/tala-linux-x86_64.tar.gz -C "$RUNNER_TEMP"
-          "$RUNNER_TEMP/tala" --help
-          TALA_DATA_DIR="$RUNNER_TEMP/tala-data" TALA_OUTPUT_DIR="$RUNNER_TEMP/tala-sessions" \
-            "$RUNNER_TEMP/tala" --list
+          root="$(mktemp -d "$RUNNER_TEMP/tala-package.XXXXXX")"
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            hdiutil attach -readonly -nobrowse -mountpoint "$root" dist/Tala.dmg
+            trap 'hdiutil detach "$root"' EXIT
+            contents="$root/Tala.app/Contents"
+            tala="$contents/MacOS/tala"
+            tools="$contents/Helpers"
+            icon="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$contents/Info.plist")"
+            iconutil -c iconset -o "$RUNNER_TEMP/Tala.iconset" "$contents/Resources/$icon"
+            codesign --verify --deep --strict "$root/Tala.app"
+          else
+            tar -xzf dist/tala-linux-x86_64.tar.gz -C "$root"
+            tala="$root/tala"
+            tools="$root/tala-tools"
+          fi
+          "$tala" --help
+          TALA_DATA_DIR="$RUNNER_TEMP/tala-data" TALA_OUTPUT_DIR="$RUNNER_TEMP/tala-sessions" "$tala" --list
+          PATH=/usr/bin:/bin "$tala" --check-dependencies | python3 -c '
+          import json, os, sys
+          report = json.load(sys.stdin)
+          assert report["file"]["ready"] and report["url"]["ready"], report
+          for name, tool in report["tools"].items():
+              assert os.path.samefile(tool["path"], os.path.join(sys.argv[1], name)), tool
+          ' "$tools"
+          PATH=/usr/bin:/bin "$tools/yt-dlp" --version
+          PATH=/usr/bin:/bin "$tools/deno" --version
+          sample=third_party/whisper.cpp/samples/jfk.mp3
+          test "$("$tools/ffprobe" -v error -select_streams a:0 -show_entries stream=codec_type -of csv=p=0 "$sample")" = audio
+          "$tools/ffmpeg" -nostdin -v error -i "$sample" -map 0:a:0 -ac 1 -ar 16000 -f f32le pipe:1 > "$RUNNER_TEMP/tala-smoke.pcm"
+          test -s "$RUNNER_TEMP/tala-smoke.pcm"
       - uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.artifact }}

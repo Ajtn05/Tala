@@ -28,8 +28,9 @@ PY
         trap 'rm -r -- "$stage"' EXIT
         cp tala "$stage/tala"
         bash scripts/copy-notices.sh "$stage/licenses"
+        bash scripts/media-tools.sh "$stage/tala-tools" "$stage/licenses"
         archive="tala-linux-$(uname -m).tar.gz"
-        tar -C "$stage" -czf "$stage/$archive" tala licenses
+        tar -C "$stage" -czf "$stage/$archive" tala tala-tools licenses
         mv -f "$stage/$archive" "dist/$archive"
         ;;
     *) echo "Packaging is supported on macOS and Linux." >&2; exit 1 ;;

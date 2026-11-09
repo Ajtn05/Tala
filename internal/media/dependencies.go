@@ -25,7 +25,7 @@ type DependencyReport struct {
 }
 
 // Dependencies checks executables without starting tools or installing software.
-// Finder launches often lack Homebrew in PATH, so standard locations are checked too.
+// Release packages supply their own tools. Source builds can use system tools.
 func Dependencies() DependencyReport { return dependencies(Tool) }
 func dependencies(lookup func(string) (string, error)) DependencyReport {
 	report := DependencyReport{Tools: map[string]Dependency{}}
@@ -96,18 +96,43 @@ func (report DependencyReport) Require(kind string) error {
 	return fmt.Errorf("missing %s for %s imports. Install with: %s", strings.Join(status.Missing, ", "), kind, status.InstallCommand)
 }
 func Tool(name string) (string, error) {
-	exe, _ := os.Executable()
-	return findTool(name, exec.LookPath, []string{filepath.Join(filepath.Dir(exe), "..", "Resources", "tools"), "/opt/homebrew/bin", "/usr/local/bin"})
+	if path := bundledTool(name); path != "" {
+		return path, nil
+	}
+	return findTool(name, exec.LookPath, []string{"/opt/homebrew/bin", "/usr/local/bin"})
 }
+
+func bundledTool(name string) string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	dir := filepath.Dir(exe)
+	if runtime.GOOS == "darwin" {
+		return executableIn(name, []string{
+			filepath.Join(dir, "..", "Helpers"),
+			filepath.Join(dir, "..", "Resources", "tools"),
+		})
+	}
+	return executableIn(name, []string{filepath.Join(dir, "tala-tools")})
+}
+
 func findTool(name string, lookPath func(string) (string, error), directories []string) (string, error) {
 	if path, err := lookPath(name); err == nil {
 		return path, nil
 	}
+	if path := executableIn(name, directories); path != "" {
+		return path, nil
+	}
+	return "", fmt.Errorf("%s is needed for this import. Install with: %s", name, installCommand([]string{name}))
+}
+
+func executableIn(name string, directories []string) string {
 	for _, directory := range directories {
 		path := filepath.Join(directory, name)
 		if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() && info.Mode()&0111 != 0 {
-			return path, nil
+			return path
 		}
 	}
-	return "", fmt.Errorf("%s is needed for this import. Install with: %s", name, installCommand([]string{name}))
+	return ""
 }

@@ -19,6 +19,7 @@ resources="$bundle/Contents/Resources"
 mkdir -p "$bundle/Contents/MacOS" "$resources"
 cp tala "$bundle/Contents/MacOS/tala"
 bash scripts/copy-notices.sh "$resources"
+bash scripts/media-tools.sh "$bundle/Contents/Helpers" "$resources"
 cp internal/dashboard/assets/Manrope-OFL.txt "$resources/Manrope-OFL.txt"
 
 # Build the Finder and Dock icon from the same artwork used on the product page.
@@ -59,8 +60,11 @@ cat > "$bundle/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
+for helper in "$bundle/Contents/Helpers/"*; do
+    codesign --force --sign - "$helper"
+done
 codesign --force --sign - "$bundle"
-codesign --verify --strict "$bundle"
+codesign --verify --deep --strict "$bundle"
 if [[ -e dist/Tala.app ]]; then
     backup="$(mktemp -d dist/.previous.XXXXXX)"
     mv dist/Tala.app "$backup/Tala.app"

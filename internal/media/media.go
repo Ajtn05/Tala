@@ -42,6 +42,18 @@ func command(ctx context.Context, name string, args ...string) (*exec.Cmd, error
 	if e != nil {
 		return nil, e
 	}
+	if name == "yt-dlp" {
+		// yt-dlp launches FFmpeg and Deno itself. Give it absolute paths so
+		// Finder launches and Linux archives work without modifying PATH.
+		var toolArgs []string
+		if ffmpeg := bundledTool("ffmpeg"); ffmpeg != "" {
+			toolArgs = append(toolArgs, "--ffmpeg-location", ffmpeg)
+		}
+		if deno := bundledTool("deno"); deno != "" {
+			toolArgs = append(toolArgs, "--js-runtimes", "deno:"+deno)
+		}
+		args = append(toolArgs, args...)
+	}
 	cmd := exec.CommandContext(ctx, p, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {
