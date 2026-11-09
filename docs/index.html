@@ -182,12 +182,31 @@
       <div class="download-panel">
         <div>
           <h2 id="install-title">Get Tala</h2>
-          <p>Free to download for Apple silicon Macs and Linux x86-64.</p>
+          <p>Tala 1.2.0 is available for Apple silicon Macs and Linux x86-64. It includes the tools for file and link imports.</p>
+          <p><a href="https://github.com/Ajtn05/Tala/releases/tag/v1.2.0">See what’s new in Tala 1.2.0</a></p>
         </div>
         <a class="button primary" href="https://github.com/Ajtn05/Tala/releases/latest">Download Tala</a>
       </div>
       <details class="setup">
-        <summary>Setup and build instructions</summary>
+        <summary>Set up Tala</summary>
+        <div class="setup-grid">
+          <article>
+            <h3>Apple silicon Mac</h3>
+            <p><a href="https://github.com/Ajtn05/Tala/releases/latest/download/Tala.dmg">Download the Mac disk image</a></p>
+            <p>On macOS 14.2 or later, open the disk image and drag Tala into Applications. If macOS blocks the app, choose <strong>Open Anyway</strong> in <strong>System Settings → Privacy &amp; Security</strong>.</p>
+            <p>In Tala’s <strong>Settings</strong>, download the Whisper model (1.6 GB) or choose an existing Whisper Large v3 Turbo model. Open <strong>New transcription</strong> to record, add a file, or paste a supported link.</p>
+          </article>
+          <article>
+            <h3>Linux x86-64</h3>
+            <p><a href="https://github.com/Ajtn05/Tala/releases/latest/download/tala-linux-x86_64.tar.gz">Download the Linux archive</a></p>
+            <p>Extract the archive and keep the <code>tala-tools</code> folder next to <code>tala</code>. Open a terminal in the extracted folder and set up the Whisper model.</p>
+            <pre><code>./tala --ensure-model</code></pre>
+            <p>Run <code>./tala --help</code> for recording and import options.</p>
+          </article>
+        </div>
+      </details>
+      <details class="setup">
+        <summary>Build from source</summary>
         <p class="lede">Building from source requires Go 1.25 or later, CMake, pkg-config, and a native compiler toolchain.</p>
         <div class="setup-grid">
           <article>
@@ -205,7 +224,6 @@ make build
             <p>On Debian or Ubuntu, install <code>libasound2-dev</code> before building. Run <code>./tala --help</code> for recording and import options.</p>
           </article>
         </div>
-        <p>Tala 1.2.0 includes the tools for file and link imports. On Linux, keep the extracted <code>tala-tools</code> folder beside the executable. The Whisper model download is approximately 1.6 GB.</p>
       </details>
     </section>
   </main>
