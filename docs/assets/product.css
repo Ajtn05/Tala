@@ -355,6 +355,9 @@ figcaption { margin-top: .75rem; color: var(--muted); font-size: .8rem; }
 .setup summary { width: fit-content; cursor: pointer; color: var(--ink); font-weight: 800; }
 .setup-grid { margin-block: 1rem; }
 .setup-grid h3 { color: var(--ink); }
+.install-guide { margin-block: 2rem; }
+.setup-steps { margin: .55rem 0 0; padding-left: 1.35rem; color: var(--muted); }
+.setup-steps li + li { margin-top: .65rem; }
 pre {
   overflow-x: auto;
   padding: .8rem 1rem;

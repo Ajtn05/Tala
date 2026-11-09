@@ -15,37 +15,26 @@
       <a class="wordmark" href="#top">
         <img src="assets/tala-icon.png" alt="" width="36" height="36"> Tala
       </a>
-      <nav aria-label="Main navigation">
-        <a href="#use-cases">Campus life</a>
-        <a href="#features">Features</a>
-        <a href="#how-it-works">How it works</a>
-      </nav>
-      <a class="button primary header-download" href="#installation">Get Tala</a>
     </div>
   </header>
 
   <main id="top">
     <section class="wrap introduction" aria-labelledby="title">
       <div class="intro-copy">
-        <p class="tag">
-          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M4 10v4m4-7v10m4-14v18m4-14v10m4-7v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-          Taglish welcome
-        </p>
-        <h1 id="title" lang="fil">Wait, ansabi <span>ni sir?</span></h1>
+        <h1 id="title" lang="fil">Wait, ano ulit <span>sinabi ni sir?</span></h1>
         <p class="intro-description">Turn lectures, org meetings, and recordings into text you can search. From English to Filipino to the Taglish in between, Tala transcribes right on your computer.</p>
         <div class="actions">
           <a class="button primary" href="#installation">Get Tala</a>
-          <a class="button secondary" href="#use-cases">See campus examples</a>
         </div>
         <p class="platform">Free and open source <span aria-hidden="true">/</span> macOS app &amp; Linux CLI</p>
       </div>
 
       <figure class="class-preview">
         <div class="chat">
-          <div class="chat-avatar" aria-hidden="true">GC</div>
+          <div class="chat-avatar" aria-hidden="true">JL</div>
           <div>
-            <p class="chat-label">Class group chat</p>
-            <p class="chat-bubble" lang="fil">“Guys, kailan daw deadline?”</p>
+            <p class="chat-label">Crush</p>
+            <p class="chat-bubble" lang="fil">“Hi, kailan daw deadline?”</p>
           </div>
         </div>
         <div class="wave-sticker" aria-hidden="true">
@@ -70,7 +59,6 @@
             <p>Upload one PDF per group, okay?</p>
           </div>
         </div>
-        <figcaption>Illustrative class chat and transcript</figcaption>
       </figure>
     </section>
 
@@ -121,7 +109,7 @@
     <section class="wrap section features" id="features" aria-labelledby="features-title">
       <div class="feature-overview">
         <div>
-          <h2 id="features-title">From audio to something you can actually use.</h2>
+          <h2 id="features-title">Explore the possibilities of Tala.</h2>
           <div class="feature-list">
             <article>
               <h3>Record or import</h3>
@@ -187,41 +175,42 @@
         </div>
         <a class="button primary" href="https://github.com/Ajtn05/Tala/releases/latest">Download Tala</a>
       </div>
+      <div class="setup-grid install-guide">
+        <article>
+          <h3>Set up the Mac app</h3>
+          <ol class="setup-steps">
+            <li><strong>Install Tala.</strong> On macOS 14.2 or later, open the disk image, drag Tala into Applications, and open it from there. <a href="https://github.com/Ajtn05/Tala/releases/latest/download/Tala.dmg">Download Tala.dmg</a>.</li>
+            <li><strong>Approve Tala if macOS blocks it.</strong> After trying to open Tala, go to <strong>System Settings → Privacy &amp; Security</strong>, scroll to <strong>Security</strong>, and choose <strong>Open Anyway</strong>. Confirm when prompted. <a href="https://support.apple.com/en-ph/102445">See Apple’s instructions</a>.</li>
+            <li><strong>Set up transcription.</strong> In Tala’s <strong>Settings</strong>, select <strong>Download model (1.6 GB)</strong> or choose an existing Whisper Large v3 Turbo model.</li>
+            <li><strong>Start a recording.</strong> Open <strong>New transcription</strong> and choose an audio source. Allow audio and Documents access when macOS asks.</li>
+          </ol>
+        </article>
+        <article>
+          <h3>Import files or links</h3>
+          <p>FFmpeg, ffprobe, and yt-dlp come with Tala. Once Whisper is ready, open <strong>New transcription</strong> to add a file or paste a supported link.</p>
+        </article>
+      </div>
       <details class="setup">
-        <summary>Set up Tala</summary>
-        <div class="setup-grid">
-          <article>
-            <h3>Apple silicon Mac</h3>
-            <p><a href="https://github.com/Ajtn05/Tala/releases/latest/download/Tala.dmg">Download the Mac disk image</a></p>
-            <p>On macOS 14.2 or later, open the disk image and drag Tala into Applications. If macOS blocks the app, choose <strong>Open Anyway</strong> in <strong>System Settings → Privacy &amp; Security</strong>.</p>
-            <p>In Tala’s <strong>Settings</strong>, download the Whisper model (1.6 GB) or choose an existing Whisper Large v3 Turbo model. Open <strong>New transcription</strong> to record, add a file, or paste a supported link.</p>
-          </article>
-          <article>
-            <h3>Linux x86-64</h3>
-            <p><a href="https://github.com/Ajtn05/Tala/releases/latest/download/tala-linux-x86_64.tar.gz">Download the Linux archive</a></p>
-            <p>Extract the archive and keep the <code>tala-tools</code> folder next to <code>tala</code>. Open a terminal in the extracted folder and set up the Whisper model.</p>
-            <pre><code>./tala --ensure-model</code></pre>
-            <p>Run <code>./tala --help</code> for recording and import options.</p>
-          </article>
-        </div>
+        <summary>Set up the Linux command-line app</summary>
+        <p class="lede">Extract the archive, open a terminal in the extracted folder, and run this command to download the 1.6 GB transcription model. <a href="https://github.com/Ajtn05/Tala/releases/latest/download/tala-linux-x86_64.tar.gz">Download the Linux archive</a>.</p>
+        <pre><code>./tala --ensure-model</code></pre>
+        <p>Run <code>./tala --help</code> for recording and import options. Keep the extracted <code>tala-tools</code> folder next to the executable.</p>
       </details>
       <details class="setup">
-        <summary>Build from source</summary>
-        <p class="lede">Building from source requires Go 1.25 or later, CMake, pkg-config, and a native compiler toolchain.</p>
+        <summary>Build from source (for developers)</summary>
+        <p class="lede">To compile Tala yourself, install Go 1.25 or later, CMake, pkg-config, and a native compiler toolchain. Run the commands from the Tala source checkout.</p>
         <div class="setup-grid">
           <article>
-            <h3>macOS 14.2 or later</h3>
+            <h3>Build the macOS app</h3>
             <pre><code>make setup
 make bundle
 open dist/Tala.app</code></pre>
-            <p>In Settings, choose a verified Whisper Large v3 Turbo model or download it. Grant audio and Documents access when prompted.</p>
           </article>
           <article>
-            <h3>Linux CLI</h3>
+            <h3>Build the Linux CLI</h3>
+            <p>On Debian or Ubuntu, install <code>libasound2-dev</code> before building.</p>
             <pre><code>make setup
-make build
-./tala --ensure-model</code></pre>
-            <p>On Debian or Ubuntu, install <code>libasound2-dev</code> before building. Run <code>./tala --help</code> for recording and import options.</p>
+make build</code></pre>
           </article>
         </div>
       </details>
