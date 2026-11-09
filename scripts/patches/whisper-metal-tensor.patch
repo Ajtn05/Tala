@@ -1,0 +1,144 @@
+diff --git a/ggml/src/ggml-metal/ggml-metal-device.m b/ggml/src/ggml-metal/ggml-metal-device.m
+index ff899a8..067df90 100644
+--- a/ggml/src/ggml-metal/ggml-metal-device.m
++++ b/ggml/src/ggml-metal/ggml-metal-device.m
+@@ -24,6 +24,13 @@
+ static const NSInteger MTLGPUFamilyMetal3_GGML = 5001;
+ static const NSInteger MTLGPUFamilyMetal4_GGML = 5002;
+
++static void ggml_metal_set_tensor_language_version(ggml_metal_device_t dev, MTLCompileOptions * options) {
++    if (ggml_metal_device_get_props(dev)->has_tensor) {
++        // Metal 4.0 exposes the tensor headers. Use the enum value for older build SDKs.
++        options.languageVersion = (MTLLanguageVersion) (4 << 16);
++    }
++}
++
+ // virtual address for GPU memory allocations
+ static atomic_uintptr_t g_addr_device = 0x000000400ULL;
+
+@@ -229,25 +236,24 @@ ggml_metal_library_t ggml_metal_library_init(ggml_metal_device_t dev) {
+
+                 MTLCompileOptions * options = [MTLCompileOptions new];
+                 options.preprocessorMacros = prep;
++                ggml_metal_set_tensor_language_version(dev, options);
+
+                 //[options setFastMathEnabled:false];
+
+                 library = [device newLibraryWithSource:src options:options error:&error];
+-                if (error) {
+-                    GGML_LOG_ERROR("%s: error: %s\n", __func__, [[error description] UTF8String]);
+-                    return nil;
+-                }
+-
+ #if !__has_feature(objc_arc)
+                 [options release];
+ #endif
++#if GGML_METAL_EMBED_LIBRARY
++                [src release];
++#endif
++                if (!library) {
++                    GGML_LOG_ERROR("%s: error: %s\n", __func__, [[error description] UTF8String]);
++                    return nil;
++                }
+             }
+         }
+
+-#if GGML_METAL_EMBED_LIBRARY
+-        [src release];
+-#endif // GGML_METAL_EMBED_LIBRARY
+-
+         GGML_LOG_INFO("%s: loaded in %.3f sec\n", __func__, (ggml_time_us() - t_start) / 1e6);
+     }
+
+@@ -286,6 +292,7 @@ ggml_metal_library_t ggml_metal_library_init_from_source(ggml_metal_device_t dev
+
+         MTLCompileOptions * options = [MTLCompileOptions new];
+         options.preprocessorMacros = prep;
++        ggml_metal_set_tensor_language_version(dev, options);
+
+         library = [device newLibraryWithSource:src options:options error:&error];
+         if (error) {
+@@ -644,24 +651,17 @@ ggml_metal_device_t ggml_metal_device_init(void) {
+                 dev->props.has_bfloat = false;
+             }
+
+-            dev->props.has_tensor = [dev->mtl_device supportsFamily:MTLGPUFamilyMetal4_GGML];
+-            if (getenv("GGML_METAL_TENSOR_DISABLE") != NULL) {
+-                dev->props.has_tensor = false;
+-            }
+-
+-            // note: disable the tensor API by default for old chips because with the current implementation it is not useful
+-            // - M2 Ultra:   ~5% slower
+-            // - M4, M4 Max: no significant difference
+-            //
+-            // TODO: try to update the tensor API kernels to at least match the simdgroup performance
+-            if (getenv("GGML_METAL_TENSOR_ENABLE") == NULL &&
+-                ![[dev->mtl_device name] containsString:@"M5"] &&
+-                ![[dev->mtl_device name] containsString:@"M6"] &&
+-                ![[dev->mtl_device name] containsString:@"A19"] &&
+-                ![[dev->mtl_device name] containsString:@"A20"]) {
+-                GGML_LOG_WARN("%s: tensor API disabled for pre-M5 and pre-A19 devices\n", __func__);
+-                dev->props.has_tensor = false;
++            const bool has_bfloat = dev->props.has_bfloat;
++#if TARGET_OS_OSX && TARGET_CPU_ARM64 && GGML_METAL_EMBED_LIBRARY
++            if (@available(macOS 26.0, *)) {
++                // Apple10 is the first GPU family with the M-series neural accelerators.
++                const MTLGPUFamily apple10 = (MTLGPUFamily) 1010;
++                dev->props.has_tensor = [[dev->mtl_device name] hasPrefix:@"Apple M"] &&
++                    [dev->mtl_device supportsFamily:apple10] &&
++                    [dev->mtl_device supportsFamily:MTLGPUFamilyMetal4_GGML] &&
++                    getenv("GGML_METAL_TENSOR_DISABLE") == NULL;
+             }
++#endif
+
+             // double-check that the tensor API compiles
+             if (dev->props.has_tensor) {
+@@ -683,7 +683,7 @@ ggml_metal_device_t ggml_metal_device_init(void) {
+                     "    auto tB = B.slice((int)tgid.x, 0); \n"
+                     " \n"
+                     "    matmul2d< \n"
+-                    "        matmul2d_descriptor(8, 8, dynamic_extent), \n"
++                    "        matmul2d_descriptor(16, 16, dynamic_extent), \n"
+                     "        execution_simdgroups<4>> mm; \n"
+                     " \n"
+                     "    auto cT = mm.get_destination_cooperative_tensor<decltype(tA), decltype(tB), float>(); \n"
+@@ -692,7 +692,7 @@ ggml_metal_device_t ggml_metal_device_init(void) {
+                     "    auto sB = tB.slice(0, 0); \n"
+                     "    mm.run(sB, sA, cT); \n"
+                     " \n"
+-                    "    auto tC = tensor<device float, dextents<int32_t, 2>, tensor_inline>(C, dextents<int32_t, 2>(4, 4)); \n"
++                    "    auto tC = tensor<device float, dextents<int32_t, 2>, tensor_inline>(C, dextents<int32_t, 2>(16, 16)); \n"
+                     " \n"
+                     "    cT.store(tC); \n"
+                     "}";
+@@ -733,7 +733,7 @@ ggml_metal_device_t ggml_metal_device_init(void) {
+                     "    auto tB = B.slice((int)tgid.x, 0); \n"
+                     " \n"
+                     "    matmul2d< \n"
+-                    "        matmul2d_descriptor(8, 8, dynamic_extent), \n"
++                    "        matmul2d_descriptor(16, 16, dynamic_extent), \n"
+                     "        execution_simdgroups<4>> mm; \n"
+                     " \n"
+                     "    auto cT = mm.get_destination_cooperative_tensor<decltype(tA), decltype(tB), float>(); \n"
+@@ -742,7 +742,7 @@ ggml_metal_device_t ggml_metal_device_init(void) {
+                     "    auto sB = tB.slice(0, 0); \n"
+                     "    mm.run(sB, sA, cT); \n"
+                     " \n"
+-                    "    auto tC = tensor<device float, dextents<int32_t, 2>, tensor_inline>(C, dextents<int32_t, 2>(4, 4)); \n"
++                    "    auto tC = tensor<device float, dextents<int32_t, 2>, tensor_inline>(C, dextents<int32_t, 2>(16, 16)); \n"
+                     " \n"
+                     "    cT.store(tC); \n"
+                     "}";
+@@ -791,6 +791,12 @@ ggml_metal_device_t ggml_metal_device_init(void) {
+             strncpy(dev->props.name, [[dev->mtl_device name] UTF8String], sizeof(dev->props.name) - 1);
+
+             dev->library = ggml_metal_library_init(dev);
++            if (!dev->library && dev->props.has_tensor) {
++                GGML_LOG_WARN("%s: tensor shader compilation failed; retrying with standard Metal\n", __func__);
++                dev->props.has_tensor = false;
++                dev->props.has_bfloat = has_bfloat;
++                dev->library = ggml_metal_library_init(dev);
++            }
+             if (!dev->library) {
+                 GGML_LOG_ERROR("%s: error: failed to create library\n", __func__);
+             }
