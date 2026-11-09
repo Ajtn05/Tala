@@ -1,10 +1,145 @@
-# Tala
+<p align="center">
+  <img src="docs/assets/tala-icon.png" alt="Tala app icon" width="88">
+</p>
 
-Tala records and transcribes audio locally. The macOS dashboard supports microphone
-and system audio, file and URL imports, editable sessions, and transcript exports.
-The Linux CLI supports microphone and media transcription.
+<h1 align="center">Tala</h1>
 
-## Build
+<p align="center">
+  <strong>Turn audio into text. Keep the transcription on your machine.</strong><br>
+  Record, import, review, and export from a macOS dashboard or Linux CLI.
+</p>
+
+<p align="center">
+  <a href="docs/index.html">Product page</a> ·
+  <a href="#get-started">Get started</a> ·
+  <a href="#build-from-source">Build from source</a>
+</p>
+
+![Tala home screen with live recording controls, file and link imports, download progress, and recent sessions](docs/screenshots/home.png)
+
+*Dashboard shown with illustrative sessions and transfer statistics.*
+
+Tala is free, open source, and runs **Whisper Large v3 Turbo locally**. No Tala account, subscription, or cloud inference is required. After the initial model download, live recording and local-file transcription work offline.
+
+## What you can do
+
+| | In Tala |
+| --- | --- |
+| **Record as you work** | Capture your microphone, system audio, or both on macOS. Record a microphone from the Linux CLI. |
+| **Bring files and links** | Drop audio/video files into the dashboard, or import media URLs supported by yt-dlp. Queue multiple files for sequential processing. |
+| **Choose just one section** | Set start/end timestamps down to milliseconds, and name a fetched link’s transcript before queueing it. Original media timestamps are preserved. |
+| **Follow the work** | See download bytes, speed, and ETA when available, followed by separate transcription progress. Cancel and retry from the queue. |
+| **Read, correct, and share** | Search transcripts, save corrections while keeping the original text, and export TXT, Markdown, SRT, or VTT. The CLI also exports JSON. |
+| **Keep your language** | Automatic detection supports English, Filipino/Tagalog, Taglish, and other Whisper languages. Tala transcribes the original speech without translating or rewriting it. |
+| **Make it comfortable** | Choose six color schemes, light/dark appearance, adjustable text size, and paragraph, single-line, timestamp, or source views. |
+
+| Review and export | Name and trim an import |
+| --- | --- |
+| ![Dark transcript viewer with source timestamps, saved corrections, search, and export controls](docs/screenshots/transcript.png) | ![Link import review with an editable transcript name and start/end timestamps](docs/screenshots/import.png) |
+
+*Open either image to see the full-size interface.*
+
+## Get started
+
+This repository contains the development preview. [Build from source](#build-from-source) to try it.
+
+### macOS
+
+1. **Open Tala.** Build with `make bundle` and open `dist/Tala.app` on macOS 14.2 or later. If macOS blocks the ad-hoc signed app, use **System Settings → Privacy & Security → Open Anyway**.
+2. **Set up Whisper.** In **Settings**, choose an existing compatible model or select **Download model (1.6 GB)**. Tala verifies the model before use.
+3. **Make a transcript.** Open **New transcription** to record audio, drop a file, or paste a link. Grant audio capture and Documents access when macOS prompts you.
+
+For file and URL imports, install the optional tools with Homebrew and use **Settings → Media tools → Check again**.
+
+```sh
+brew install ffmpeg         # Local files, including ffprobe
+brew install ffmpeg yt-dlp  # Local files and supported URLs
+```
+
+On macOS, transcripts live in `~/Documents/Tala/`. Settings and model downloads live in `~/Library/Application Support/Tala/`.
+
+### Linux
+
+[Build the CLI](#build-from-source), then download the verified model and record or import a file. File imports need FFmpeg, and URL imports also need yt-dlp.
+
+```sh
+./tala --ensure-model
+./tala --record --duration 20s
+./tala --transcribe lecture.mp4
+```
+
+The Linux CLI uses XDG data and config directories. On either platform, use `TALA_DATA_DIR` and `TALA_OUTPUT_DIR` to choose an isolated workspace.
+
+## Everyday workflows
+
+### Record → review → export
+
+Choose **Microphone only**, **System audio only**, or **Microphone + system audio**, then start recording. Stop to finish the transcript. In the viewer, search with **⌘F**, hover or focus a segment to **Edit**, and use **Copy text** or **Export file…** in the bottom toolbar. Corrections can be restored to their original text.
+
+### Import only the part you need
+
+Drop a file, or paste a link and choose **Fetch details**. For a link, edit **Transcript name** before queueing. Set **Start** and **End** using seconds (`90`), `MM:SS` (`1:30`), or `HH:MM:SS` (`1:02:30`). Milliseconds such as `1:30.250` also work. Blank fields use the beginning/end of the source.
+
+Only the selected audio is transcribed. Subtitle timestamps retain the source timeline. URL imports download the complete source before processing the selection.
+
+### Use a link that needs sign-in
+
+Expand **URL sign-in helper**, select your browser/profile, and **Open site to sign in**. Save the selection and fetch details again. **Zen** supports profile discovery. **Dia** and unlisted browsers use a Netscape `cookies.txt` export. **Copy URL** lets you open the link in any browser.
+
+Access depends on the website and yt-dlp support. Use the browser sign-in helper for links your browser account can access.
+
+### Work from the terminal
+
+Run these commands from the checkout after `make build`. Put options before input paths and quote URLs.
+
+```sh
+# Plain text, subtitles, or one selected interval.
+./tala --transcribe lecture.mp4
+./tala --format srt --transcribe lecture.mp4 > lecture.srt
+./tala --start 1:30 --end 5:00 --transcribe lecture.mp4
+
+# A signed-in link, or a timed microphone recording.
+./tala --cookies-from-browser zen --transcribe 'https://example.org/media'
+./tala --record --duration 1m
+
+# Find saved sessions and export one without loading the model.
+./tala --list
+./tala --export SESSION_ID --format md > notes.md
+```
+
+Progress goes to **stderr** and transcript output goes to **stdout**. Use `--progress=auto|always|never` to control the display. Run `./tala --help` for the full list of options.
+
+## Questions before you start
+
+<details>
+<summary><strong>Does my audio go to a cloud transcription service?</strong></summary>
+
+Recognition runs on your machine. Initial model downloads and media URL imports use the internet. Once the model is set up, microphone recording and local-file transcription can work offline.
+
+</details>
+
+<details>
+<summary><strong>Can I use a model I already have?</strong></summary>
+
+Yes. Choose your Whisper Large v3 Turbo model in **Settings** or use `--model /path/to/ggml-large-v3-turbo.bin`. Tala verifies its SHA-256 checksum before using it in place.
+
+</details>
+
+<details>
+<summary><strong>What survives an update?</strong></summary>
+
+Tala stores models, settings, transcripts, corrections, and queued imports outside the app bundle. The preview uses a separate workspace from the previous release. Existing sessions remain available in that release.
+
+</details>
+
+<details>
+<summary><strong>How fast and accurate is it?</strong></summary>
+
+Tala uses Whisper Large v3 Turbo, with Metal acceleration on macOS and CPU inference on Linux. Speed depends on hardware, recording length, and audio content. Language quality also depends on the recording. Vocabulary hints can help with names and specialist words but do not guarantee spelling.
+
+</details>
+
+## Build from source
 
 Install Go 1.25 or later, CMake, pkg-config, and the native compiler toolchain.
 On Debian or Ubuntu, install `libasound2-dev` for microphone capture. The build
@@ -21,26 +156,6 @@ On macOS 14.2 or later, use `make bundle` and open `dist/Tala.app`. This
 development bundle has its own identity and requests microphone or system audio
 access when recording.
 
-## Model and storage
-
-Download the verified Whisper Large v3 Turbo model from Settings or run
-`./tala --ensure-model`. To use a copy of a verified model you already have,
-select it in Settings or supply `--model /path/to/ggml-large-v3-turbo.bin` on the CLI.
-
-On macOS, Tala stores settings and downloaded models under
-`~/Library/Application Support/Tala/` and sessions under `~/Documents/Tala/`.
-On Linux, it uses XDG data and config directories. `TALA_DATA_DIR` and
-`TALA_OUTPUT_DIR` select separate directories for testing. This development
-version starts with its own workspace. The previous checkout and its sessions
-remain available separately.
-
-```sh
-./tala --record --duration 20s
-./tala --transcribe recording.wav
-./tala --list
-./tala --export SESSION_ID --format srt
-```
-
 ## Recording design
 
 Capture adapters send timestamped PCM frames to the recorder. The recorder
@@ -50,5 +165,5 @@ before the session completes. Unit tests exercise draining, sample-rate
 conversion, and cancellation on storage failure. To test real inference with
 the upstream speech fixture, set `TALA_TEST_MODEL` before running `make test`.
 
-Application code uses the MIT license. Third-party components retain their own
+Application code uses the [MIT license](LICENSE). Third-party components retain their own
 licenses. See the license files included with the macOS bundle.

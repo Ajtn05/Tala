@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Record, import, review, and export audio transcripts on your own machine with Tala.">
+  <title>Tala | Local audio transcription</title>
+  <link rel="icon" href="assets/tala-icon.png" type="image/png">
+  <link rel="stylesheet" href="assets/product.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="wordmark" href="#top">
+        <img src="assets/tala-icon.png" alt="" width="32" height="32"> Tala
+      </a>
+      <nav aria-label="Main navigation">
+        <a href="#features">Features</a>
+        <a href="#use-cases">Use cases</a>
+        <a href="#how-it-works">How it works</a>
+        <a href="#installation">Get started</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="wrap introduction" aria-labelledby="title">
+      <p class="platform">macOS app and Linux CLI</p>
+      <h1 id="title">Transcribe everything.<br>Right on your Mac.</h1>
+      <p>Record live audio or bring your own files and links. Tala transcribes English, Filipino, Taglish, and other Whisper languages on your machine.</p>
+      <div class="actions">
+        <a class="button primary" href="#installation">Build the preview</a>
+        <a class="button secondary" href="#features">Explore Tala</a>
+      </div>
+      <figure class="preview">
+        <a href="screenshots/home.png">
+          <img src="screenshots/home.png" width="2200" height="1600" alt="Tala dashboard with live recording, file and link imports, queue progress, and recent sessions" fetchpriority="high">
+        </a>
+        <figcaption>Tala’s macOS dashboard with sample sessions.</figcaption>
+      </figure>
+    </section>
+
+    <section class="wrap section" id="features" aria-labelledby="features-title">
+      <h2 id="features-title">Turn audio into text you can use</h2>
+      <div class="feature-list">
+        <article>
+          <h3>Record as you work</h3>
+          <p>Capture your microphone, system audio, or both on macOS. The Linux CLI supports microphone capture.</p>
+        </article>
+        <article>
+          <h3>Bring files and links</h3>
+          <p>Drop a file or paste a supported URL. Name the transcript, choose a time range, and follow download and transcription progress.</p>
+        </article>
+        <article>
+          <h3>Keep your language</h3>
+          <p>Automatic detection handles mixed-language speech. Use vocabulary hints for names and specialist terms.</p>
+        </article>
+        <article>
+          <h3>Read, correct, and share</h3>
+          <p>Search sessions, correct text while keeping the original, and export plain text, Markdown, or subtitles.</p>
+        </article>
+        <article>
+          <h3>Run Whisper locally</h3>
+          <p>After model setup, live recording and file transcription work offline. Use Metal on macOS or CPU inference on Linux.</p>
+        </article>
+        <article>
+          <h3>Make it comfortable</h3>
+          <p>Switch color schemes and text layouts, adjust the font size, or enable quick recording controls in the menu bar.</p>
+        </article>
+      </div>
+      <div class="gallery">
+        <figure>
+          <a href="screenshots/transcript.png">
+            <img src="screenshots/transcript.png" width="2200" height="1800" alt="Transcript editor with timestamps, corrections, and export controls" loading="lazy">
+          </a>
+          <figcaption>Review a transcript and export the text.</figcaption>
+        </figure>
+        <figure>
+          <a href="screenshots/import.png">
+            <img src="screenshots/import.png" width="2200" height="1794" alt="Link import review with transcript name and start and end timestamps" loading="lazy">
+          </a>
+          <figcaption>Name an import and transcribe just the section you need.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="wrap section" id="use-cases" aria-labelledby="uses-title">
+      <h2 id="uses-title">From meetings to voice notes</h2>
+      <ul class="use-list">
+        <li><strong>Meetings and calls</strong><span>Find decisions and action items in a searchable transcript.</span></li>
+        <li><strong>Lectures and courses</strong><span>Review a section with timestamps tied to the original audio.</span></li>
+        <li><strong>Podcasts and interviews</strong><span>Edit the text and export subtitles for recorded media.</span></li>
+        <li><strong>Voice notes and journaling</strong><span>Record a thought and copy it out as continuous text.</span></li>
+      </ul>
+    </section>
+
+    <section class="wrap section" id="how-it-works" aria-labelledby="flow-title">
+      <h2 id="flow-title">Record, review, export</h2>
+      <div class="workflow">
+        <ol>
+          <li>Open <strong>New transcription</strong> and choose a recording source or import media.</li>
+          <li>Open the saved session to find a phrase, correct a segment, or read by source.</li>
+          <li>Copy the text or export TXT, Markdown, SRT, or VTT. The CLI also exports JSON.</li>
+        </ol>
+        <figure class="transcript-example">
+          <figcaption>Sample transcript</figcaption>
+          <p><span>System Audio <time datetime="PT8S">00:08</time></span>Can we review the slides on Friday?</p>
+          <p><span>Microphone <time datetime="PT12S">00:12</time></span>Yes. I’ll share the draft first.</p>
+        </figure>
+      </div>
+    </section>
+
+    <section class="wrap section" id="installation" aria-labelledby="install-title">
+      <h2 id="install-title">Try the Tala preview</h2>
+      <p class="lede">Build from this checkout with Go 1.25 or later, CMake, pkg-config, and a native compiler toolchain.</p>
+      <div class="setup-grid">
+        <article>
+          <h3>macOS 14.2 or later</h3>
+          <pre><code>make setup
+make bundle
+open dist/Tala.app</code></pre>
+          <p>In Settings, choose a verified Whisper Large v3 Turbo model or download it. Grant audio and Documents access when prompted.</p>
+        </article>
+        <article>
+          <h3>Linux CLI</h3>
+          <pre><code>make setup
+make build
+./tala --ensure-model</code></pre>
+          <p>On Debian or Ubuntu, install <code>libasound2-dev</code> before building. Run <code>./tala --help</code> for recording and import options.</p>
+        </article>
+      </div>
+      <p class="lede">File imports use FFmpeg and ffprobe. URL imports also use yt-dlp. The model download is approximately 1.6 GB.</p>
+    </section>
+  </main>
+
+  <footer class="wrap site-footer">
+    <span>Tala is open source under the MIT license.</span>
+    <a href="https://github.com/ggml-org/whisper.cpp">Powered by whisper.cpp</a>
+  </footer>
+</body>
+</html>
