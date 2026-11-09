@@ -39,6 +39,38 @@ function harness({ deferActions = [], snapshot: overrides = {} } = {}) {
 }
 const flush = () => new Promise(setImmediate);
 
+test("the quiet import toggle is shown only in settings and saved there", async () => {
+  const h = harness();
+  await flush();
+  assert.doesNotMatch(h.element("#content").innerHTML, /Skip nearly silent import windows/);
+  vm.runInContext('navigate("settings")', h.context);
+  assert.match(h.element("#content").innerHTML, /id="skip-quiet-imports"[^>]*>/);
+  assert.doesNotMatch(h.element("#content").innerHTML, /id="skip-quiet-imports"[^>]*checked/);
+  h.element("#skip-quiet-imports").checked = true;
+  await h.element("#save-settings").onclick();
+  const save = h.requests.findLast((request) => request.action === "settings");
+  assert.equal(save.data.skipQuietImports, true);
+  assert.match(h.element("#content").innerHTML, /id="skip-quiet-imports"[^>]*checked/);
+});
+
+test("the tensor indicator updates without rebuilding open settings", async () => {
+  const h = harness();
+  await flush();
+  vm.runInContext('view = "settings"; renderSettings()', h.context);
+  assert.match(h.element("#content").innerHTML, /Tensor acceleration status appears after Whisper loads/);
+
+  const draft = h.element("#context-prompt");
+  draft.value = "unsaved vocabulary";
+  const settings = h.element("#content").innerHTML;
+  h.window.receive({ type: "tensorAcceleration", data: "Tensor acceleration active" });
+  assert.equal(h.element("#tensor-acceleration").textContent, "Tensor acceleration active");
+  assert.equal(h.element("#content").innerHTML, settings);
+  assert.equal(draft.value, "unsaved vocabulary");
+
+  vm.runInContext('applySnapshot({ tensorAcceleration: "Tensor acceleration inactive" })', h.context);
+  assert.match(h.element("#content").innerHTML, /Tensor acceleration inactive/);
+});
+
 test("file drags are accepted and resolve paths through the native bridge", async () => {
   const h = harness();
   await flush();

@@ -8,8 +8,9 @@ PABUILD := $(NATIVE)/build-portaudio
 export CGO_ENABLED := 1
 export PKG_CONFIG_PATH := $(PABUILD):$(PKG_CONFIG_PATH)
 export CGO_CFLAGS := -I$(WHISPER)/include -I$(WHISPER)/ggml/include
-export CGO_LDFLAGS := -L$(WBUILD)/src -L$(WBUILD)/ggml/src -L$(WBUILD)/ggml/src/ggml-metal -L$(WBUILD)/ggml/src/ggml-blas
+export CGO_LDFLAGS = -L$(WBUILD)/src -L$(WBUILD)/ggml/src -L$(WBUILD)/ggml/src/ggml-metal -L$(WBUILD)/ggml/src/ggml-blas
 ifeq ($(shell uname -s),Darwin)
+WBUILD := $(NATIVE)/build-whisper-metal
 export MACOSX_DEPLOYMENT_TARGET := 14.2
 export CGO_LDFLAGS += -framework Foundation -framework Metal -framework MetalKit -framework Accelerate -framework CoreAudio -framework AudioToolbox -framework AudioUnit -framework CoreServices
 endif

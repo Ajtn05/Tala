@@ -205,6 +205,17 @@ func TestQueueCancellationRetryAndPersistence(t *testing.T) {
 	}
 }
 
+func TestQuietImportWindowRequiresEverySampleToBeQuiet(t *testing.T) {
+	if !quietImportWindow([]float32{0, -0.0009, 0.0009}) {
+		t.Fatal("nearly silent window was kept")
+	}
+	for _, sample := range []float32{-0.001, 0.001, 0.1} {
+		if quietImportWindow([]float32{0, 0, sample, 0}) {
+			t.Fatalf("window with peak %g was skipped", sample)
+		}
+	}
+}
+
 func TestInvalidRangesNeverEnterQueue(t *testing.T) {
 	c := controller(t)
 	if _, err := c.EnqueueRange("https://example.org/audio", "url", false, media.TimeRange{Start: 20, End: 10}); err == nil {
