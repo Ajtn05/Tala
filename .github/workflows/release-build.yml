@@ -41,6 +41,15 @@ jobs:
           make test
           make test-ui
           make package
+      - name: Verify the macOS app icon in the disk image
+        if: runner.os == 'macOS'
+        run: |
+          mount="$(mktemp -d)"
+          hdiutil attach -readonly -nobrowse -mountpoint "$mount" dist/Tala.dmg
+          trap 'hdiutil detach "$mount"' EXIT
+          contents="$mount/Tala.app/Contents"
+          icon="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$contents/Info.plist")"
+          iconutil -c iconset -o "$RUNNER_TEMP/Tala.iconset" "$contents/Resources/$icon"
       - name: Smoke-test Linux archive
         if: runner.os == 'Linux'
         run: |

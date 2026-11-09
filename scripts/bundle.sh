@@ -13,12 +13,23 @@ if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 fi
 mkdir -p dist
 stage="$(mktemp -d dist/.tala-build.XXXXXX)"
+trap 'rm -r -- "$stage"' EXIT
 bundle="$stage/Tala.app"
 resources="$bundle/Contents/Resources"
 mkdir -p "$bundle/Contents/MacOS" "$resources"
 cp tala "$bundle/Contents/MacOS/tala"
 bash scripts/copy-notices.sh "$resources"
 cp internal/dashboard/assets/Manrope-OFL.txt "$resources/Manrope-OFL.txt"
+
+# Build the Finder and Dock icon from the same artwork used on the product page.
+iconset="$stage/Tala.iconset"
+mkdir "$iconset"
+for size in 16 32 128 256 512; do
+    sips -z "$size" "$size" docs/assets/tala-icon.png --out "$iconset/icon_${size}x${size}.png" >/dev/null
+    retina="$((size * 2))"
+    sips -z "$retina" "$retina" docs/assets/tala-icon.png --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
+done
+iconutil -c icns -o "$resources/Tala.icns" "$iconset"
 
 cat > "$bundle/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -29,6 +40,8 @@ cat > "$bundle/Contents/Info.plist" <<PLIST
   <string>io.github.ajtn05.tala.next</string>
   <key>CFBundleName</key>
   <string>Tala</string>
+  <key>CFBundleIconFile</key>
+  <string>Tala.icns</string>
   <key>CFBundleExecutable</key>
   <string>tala</string>
   <key>CFBundlePackageType</key>
@@ -53,5 +66,4 @@ if [[ -e dist/Tala.app ]]; then
     mv dist/Tala.app "$backup/Tala.app"
 fi
 mv "$bundle" dist/Tala.app
-rmdir "$stage"
 echo 'Built dist/Tala.app'

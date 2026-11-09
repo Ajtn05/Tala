@@ -42,7 +42,7 @@ Tala is free, open source, and runs **Whisper Large v3 Turbo locally**. No Tala 
 
 ## Get started
 
-[Download Tala 1.0.0](https://github.com/Ajtn05/Tala/releases/tag/v1.0.0) for Apple Silicon macOS or Linux x86_64. See the [release notes](docs/releases/v1.0.0.md) for platform requirements and verification details. You can also [build from source](#build-from-source).
+[Download Tala](https://github.com/Ajtn05/Tala/releases/latest) for Apple Silicon macOS or Linux x86_64. See the [1.1.0 release notes](docs/releases/v1.1.0.md) for changes and platform requirements. You can also [build from source](#build-from-source).
 
 ### macOS
 
@@ -82,6 +82,8 @@ Choose **Microphone only**, **System audio only**, or **Microphone + system audi
 Drop a file, or paste a link and choose **Fetch details**. For a link, edit **Transcript name** before queueing. Set **Start** and **End** using seconds (`90`), `MM:SS` (`1:30`), or `HH:MM:SS` (`1:02:30`). Milliseconds such as `1:30.250` also work. Blank fields use the beginning/end of the source.
 
 Only the selected audio is transcribed. Subtitle timestamps retain the source timeline. URL imports download the complete source before processing the selection.
+
+For files or links with long pauses, enable **Settings → Recognition → Skip nearly silent import windows**, or pass `--skip-quiet-imports` in the CLI. Source timestamps are preserved. Leave the option off for very faint recordings.
 
 ### Use a link that needs sign-in
 
@@ -136,7 +138,7 @@ Tala stores models, settings, transcripts, corrections, and queued imports outsi
 <details>
 <summary><strong>How fast and accurate is it?</strong></summary>
 
-Tala uses Whisper Large v3 Turbo, with Metal acceleration on macOS and CPU inference on Linux. Speed depends on hardware, recording length, and audio content. Language quality also depends on the recording. Vocabulary hints can help with names and specialist words but do not guarantee spelling.
+Tala uses Whisper Large v3 Turbo, with Metal acceleration on macOS and CPU inference on Linux. On M5-class Macs running macOS 26 or later, Tala can use Metal tensor acceleration. **Settings → Whisper Large v3 Turbo** shows its status once the model loads. Speed depends on hardware, recording length, and audio content. Vocabulary hints can help with names and specialist words but do not guarantee spelling.
 
 </details>
 
