@@ -351,6 +351,8 @@ figcaption { margin-top: .75rem; color: var(--muted); font-size: .8rem; }
 }
 
 .download-panel p { margin-top: .6rem; }
+.download-copy { flex: 1 1 25rem; }
+.download-actions { display: flex; flex-wrap: wrap; gap: .65rem; }
 .setup { margin-top: 1.25rem; color: var(--muted); }
 .setup summary { width: fit-content; cursor: pointer; color: var(--ink); font-weight: 800; }
 .setup-grid { margin-block: 1rem; }
@@ -397,6 +399,8 @@ code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size
   h1 { font-size: clamp(2.85rem, 14vw, 3.75rem); }
   .gallery, .steps, .setup-grid { grid-template-columns: minmax(0, 1fr); }
   .class-preview { border-radius: 1.25rem; }
+  .download-actions { width: 100%; }
+  .download-actions .button { width: 100%; }
 }
 
 @media (max-width: 29rem) {

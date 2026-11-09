@@ -168,18 +168,21 @@
 
     <section class="wrap installation" id="installation" aria-labelledby="install-title">
       <div class="download-panel">
-        <div>
+        <div class="download-copy">
           <h2 id="install-title">Get Tala</h2>
           <p>Tala 1.2.0 is available for Apple silicon Macs and Linux x86-64. It includes the tools for file and link imports.</p>
           <p><a href="https://github.com/Ajtn05/Tala/releases/tag/v1.2.0">See what’s new in Tala 1.2.0</a></p>
         </div>
-        <a class="button primary" href="https://github.com/Ajtn05/Tala/releases/latest">Download Tala</a>
+        <div class="download-actions">
+          <a class="button primary" href="https://github.com/Ajtn05/Tala/releases/latest/download/Tala.dmg">Download for macOS</a>
+          <a class="button primary" href="https://github.com/Ajtn05/Tala/releases/latest/download/tala-linux-x86_64.tar.gz">Download for Linux</a>
+        </div>
       </div>
       <div class="setup-grid install-guide">
         <article>
           <h3>Set up the Mac app</h3>
           <ol class="setup-steps">
-            <li><strong>Install Tala.</strong> On macOS 14.2 or later, open the disk image, drag Tala into Applications, and open it from there. <a href="https://github.com/Ajtn05/Tala/releases/latest/download/Tala.dmg">Download Tala.dmg</a>.</li>
+            <li><strong>Install Tala.</strong> On macOS 14.2 or later, open the disk image, drag Tala into Applications, and open it from there.</li>
             <li><strong>Approve Tala if macOS blocks it.</strong> After trying to open Tala, go to <strong>System Settings → Privacy &amp; Security</strong>, scroll to <strong>Security</strong>, and choose <strong>Open Anyway</strong>. Confirm when prompted. <a href="https://support.apple.com/en-ph/102445">See Apple’s instructions</a>.</li>
             <li><strong>Set up transcription.</strong> In Tala’s <strong>Settings</strong>, select <strong>Download model (1.6 GB)</strong> or choose an existing Whisper Large v3 Turbo model.</li>
             <li><strong>Start a recording.</strong> Open <strong>New transcription</strong> and choose an audio source. Allow audio and Documents access when macOS asks.</li>
@@ -192,7 +195,7 @@
       </div>
       <details class="setup">
         <summary>Set up the Linux command-line app</summary>
-        <p class="lede">Extract the archive, open a terminal in the extracted folder, and run this command to download the 1.6 GB transcription model. <a href="https://github.com/Ajtn05/Tala/releases/latest/download/tala-linux-x86_64.tar.gz">Download the Linux archive</a>.</p>
+        <p class="lede">Extract the archive, open a terminal in the extracted folder, and run this command to download the 1.6 GB transcription model.</p>
         <pre><code>./tala --ensure-model</code></pre>
         <p>Run <code>./tala --help</code> for recording and import options. Keep the extracted <code>tala-tools</code> folder next to the executable.</p>
       </details>
