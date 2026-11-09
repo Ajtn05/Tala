@@ -1,0 +1,55 @@
+name: Build release packages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macOS arm64
+            runner: macos-15
+            artifact: macos-arm64
+            package: dist/Tala.dmg
+          - platform: Linux x86_64
+            runner: ubuntu-24.04
+            artifact: linux-x86_64
+            package: dist/tala-linux-x86_64.tar.gz
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25.x'
+      - name: Install Linux build and test tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake pkg-config libasound2-dev ffmpeg
+      - name: Build, test, and package
+        run: |
+          make setup
+          make test
+          make test-ui
+          make package
+      - name: Smoke-test Linux archive
+        if: runner.os == 'Linux'
+        run: |
+          tar -xzf dist/tala-linux-x86_64.tar.gz -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/tala" --help
+          TALA_DATA_DIR="$RUNNER_TEMP/tala-data" TALA_OUTPUT_DIR="$RUNNER_TEMP/tala-sessions" \
+            "$RUNNER_TEMP/tala" --list
+      - uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.package }}
+          if-no-files-found: error

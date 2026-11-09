@@ -10,6 +10,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/Ajtn05/Tala/releases/latest">Download Tala</a> ·
   <a href="docs/index.html">Product page</a> ·
   <a href="#get-started">Get started</a> ·
   <a href="#build-from-source">Build from source</a>
@@ -41,11 +42,11 @@ Tala is free, open source, and runs **Whisper Large v3 Turbo locally**. No Tala 
 
 ## Get started
 
-This repository contains the development preview. [Build from source](#build-from-source) to try it.
+[Download Tala 1.0.0](https://github.com/Ajtn05/Tala/releases/tag/v1.0.0) for Apple Silicon macOS or Linux x86_64. See the [release notes](docs/releases/v1.0.0.md) for platform requirements and verification details. You can also [build from source](#build-from-source).
 
 ### macOS
 
-1. **Open Tala.** Build with `make bundle` and open `dist/Tala.app` on macOS 14.2 or later. If macOS blocks the ad-hoc signed app, use **System Settings → Privacy & Security → Open Anyway**.
+1. **Install Tala.** Open `Tala.dmg` and drag Tala to Applications on macOS 14.2 or later. If macOS blocks the ad-hoc signed app, use **System Settings → Privacy & Security → Open Anyway**.
 2. **Set up Whisper.** In **Settings**, choose an existing compatible model or select **Download model (1.6 GB)**. Tala verifies the model before use.
 3. **Make a transcript.** Open **New transcription** to record audio, drop a file, or paste a link. Grant audio capture and Documents access when macOS prompts you.
 
@@ -60,7 +61,7 @@ On macOS, transcripts live in `~/Documents/Tala/`. Settings and model downloads 
 
 ### Linux
 
-[Build the CLI](#build-from-source), then download the verified model and record or import a file. File imports need FFmpeg, and URL imports also need yt-dlp.
+Extract `tala-linux-x86_64.tar.gz` or [build the CLI](#build-from-source). Then download the verified model and record or import a file. File imports need FFmpeg, and URL imports also need yt-dlp.
 
 ```sh
 ./tala --ensure-model
@@ -128,7 +129,7 @@ Yes. Choose your Whisper Large v3 Turbo model in **Settings** or use `--model /p
 <details>
 <summary><strong>What survives an update?</strong></summary>
 
-Tala stores models, settings, transcripts, corrections, and queued imports outside the app bundle. The preview uses a separate workspace from the previous release. Existing sessions remain available in that release.
+Tala stores models, settings, transcripts, corrections, and queued imports outside the app bundle. Tala 1.0 uses a separate workspace from the previous app. Existing sessions remain available in that app.
 
 </details>
 
@@ -152,9 +153,9 @@ make test
 make build
 ```
 
-On macOS 14.2 or later, use `make bundle` and open `dist/Tala.app`. This
-development bundle has its own identity and requests microphone or system audio
-access when recording.
+On macOS 14.2 or later, use `make bundle` and open `dist/Tala.app`. The
+app requests microphone or system audio access when recording. Use
+`make package` to create a disk image or Linux archive.
 
 ## Recording design
 

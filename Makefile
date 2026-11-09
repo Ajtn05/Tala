@@ -14,7 +14,7 @@ export MACOSX_DEPLOYMENT_TARGET := 14.2
 export CGO_LDFLAGS += -framework Foundation -framework Metal -framework MetalKit -framework Accelerate -framework CoreAudio -framework AudioToolbox -framework AudioUnit -framework CoreServices
 endif
 
-.PHONY: build setup test test-ui bundle
+.PHONY: build setup test test-ui bundle package
 build:
 	$(GO) build -o tala ./cmd/tala
 
@@ -29,3 +29,10 @@ test-ui:
 
 bundle: build
 	TALA_GO="$(GO)" bash scripts/bundle.sh
+
+ifeq ($(shell uname -s),Darwin)
+package: bundle
+else
+package: build
+endif
+	TALA_GO="$(GO)" bash scripts/package.sh
