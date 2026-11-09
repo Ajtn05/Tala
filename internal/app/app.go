@@ -73,6 +73,7 @@ type Controller struct {
 	Models      models.Manager
 	engineMu    sync.Mutex
 	engine      *transcriber.Transcriber
+	tensorMode  string
 	Model       models.Status
 	live        Live
 	liveCancel  context.CancelFunc
@@ -177,14 +178,18 @@ func (c *Controller) saveJobsLocked() error {
 }
 func (c *Controller) Snapshot() any {
 	c.mu.Lock()
-	live, model := c.live, c.Model
+	live, model, tensorAcceleration := c.live, c.Model, c.tensorMode
 	jobs := append([]Job{}, c.jobs...)
 	c.mu.Unlock()
 	items, e := c.Store.List()
 	if e != nil {
 		c.Emit("error", e.Error())
 	}
-	return map[string]any{"live": live, "model": model, "jobs": jobs, "sessions": items, "settings": c.Models.Settings(), "dependencies": media.Dependencies(), "output": c.Store.Dir}
+	return map[string]any{
+		"live": live, "model": model, "jobs": jobs, "sessions": items,
+		"settings": c.Models.Settings(), "dependencies": media.Dependencies(), "output": c.Store.Dir,
+		"tensorAcceleration": tensorAcceleration,
+	}
 }
 func (c *Controller) Discover() {
 	c.mu.Lock()
@@ -218,18 +223,25 @@ func (c *Controller) ensureEngine() error {
 	if status.Path == "" {
 		return errors.New("wait for model verification, or choose a valid model in Settings")
 	}
-	message := "Loading Whisper for CPU inference…"
-	if runtime.GOOS == "darwin" {
-		message = "Loading Whisper with Metal acceleration…"
-	}
-	c.Emit("activity", message)
+	c.Emit("activity", "Loading Whisper…")
 	settings := c.recognitionSettings()
 	engine, e := transcriber.New(transcriber.Config{ModelPath: status.Path, Language: settings.Language, Prompt: settings.Prompt})
 	if e != nil {
 		return e
 	}
 	c.engine = engine
-	c.Emit("activity", "Model ready")
+	activity := "Model ready"
+	if runtime.GOOS == "darwin" {
+		activity = "Tensor acceleration inactive"
+		if transcriber.TensorAccelerationActive() {
+			activity = "Tensor acceleration active"
+		}
+		c.mu.Lock()
+		c.tensorMode = activity
+		c.emitLocked("tensorAcceleration", activity)
+		c.mu.Unlock()
+	}
+	c.Emit("activity", activity)
 	return nil
 }
 func (c *Controller) Transcribe(ctx context.Context, samples []float32) ([]transcriber.Segment, error) {

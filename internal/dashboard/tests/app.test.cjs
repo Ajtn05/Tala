@@ -39,6 +39,24 @@ function harness({ deferActions = [], snapshot: overrides = {} } = {}) {
 }
 const flush = () => new Promise(setImmediate);
 
+test("the tensor indicator updates without rebuilding open settings", async () => {
+  const h = harness();
+  await flush();
+  vm.runInContext('view = "settings"; renderSettings()', h.context);
+  assert.match(h.element("#content").innerHTML, /Tensor acceleration status appears after Whisper loads/);
+
+  const draft = h.element("#context-prompt");
+  draft.value = "unsaved vocabulary";
+  const settings = h.element("#content").innerHTML;
+  h.window.receive({ type: "tensorAcceleration", data: "Tensor acceleration active" });
+  assert.equal(h.element("#tensor-acceleration").textContent, "Tensor acceleration active");
+  assert.equal(h.element("#content").innerHTML, settings);
+  assert.equal(draft.value, "unsaved vocabulary");
+
+  vm.runInContext('applySnapshot({ tensorAcceleration: "Tensor acceleration inactive" })', h.context);
+  assert.match(h.element("#content").innerHTML, /Tensor acceleration inactive/);
+});
+
 test("file drags are accepted and resolve paths through the native bridge", async () => {
   const h = harness();
   await flush();
