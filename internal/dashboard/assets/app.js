@@ -47,6 +47,8 @@ const state = {
   jobs: [],
   live: { active: false, mode: 0 },
   model: { state: "checking" },
+  modelCatalog: [],
+  modelInventory: {},
   settings: { language: "auto" },
   dependencies: {},
 };
@@ -67,6 +69,8 @@ let view = "new",
   enqueuingURL = false,
   retainMedia = false,
   startingRecording = false,
+  modelChoices = { recording: "", files: "", url: "" },
+  savingModelPreference = false,
   mode = storage.getItem("displayMode") || "clean",
   font = Number(storage.getItem("fontSize")) || 17,
   autoScroll = true,
@@ -185,9 +189,23 @@ window.receive = function (event) {
   }
   if (event.type === "model") {
     state.model = d;
-    syncNavigation();
-    if (view === "settings") renderSettings();
-    if (view === "new") renderHomeRecording();
+    refreshModelPickers();
+    return;
+  }
+  if (event.type === "modelInventory") {
+    const before = state.modelInventory;
+    state.modelInventory = d;
+    if (d.download?.id && d.download.id === before.download?.id) {
+      updateModelTransfer();
+    } else {
+      renderModelLibrary();
+      refreshModelPickers();
+    }
+    return;
+  }
+  if (event.type === "chooseRecordingModel") {
+    navigate("new");
+    ($("#recording-model") || $("#open-model"))?.focus();
     return;
   }
   if (event.type === "tensorAcceleration") {
@@ -197,7 +215,13 @@ window.receive = function (event) {
     return;
   }
   if (event.type === "settings") {
+    const modelChanged = d.askModel !== state.settings.askModel || d.defaultModel !== state.settings.defaultModel;
     state.settings = d;
+    if (modelChanged) {
+      modelChoices = { recording: "", files: "", url: "" };
+      renderModelLibrary();
+      refreshModelPickers();
+    }
     return;
   }
   if (event.type === "live") {
@@ -321,7 +345,7 @@ async function refreshSessions() {
             " · " +
             duration(selected.duration) +
             "\n" +
-            selected.source + (rangeLabel(selected.range) ? "\nSelected range: " + rangeLabel(selected.range) : "");
+            selected.source + (sessionModelName(selected) ? "\n" + sessionModelName(selected) : "") + (rangeLabel(selected.range) ? "\nSelected range: " + rangeLabel(selected.range) : "");
       }
       updateRecordingBanner();
     }
@@ -429,6 +453,7 @@ function renderNew() {
     urlMeta = null;
     urlRange = { start: "", end: "" };
     urlTitle = null;
+    modelChoices.url = "";
     retainMedia = false;
     $("#url-details").innerHTML = "";
     $("#url-error").hidden = true;
@@ -452,8 +477,10 @@ function renderHomeRecording() {
       <select id="audio-source" aria-label="Audio source" ${live.active || startingRecording ? "disabled" : ""}>
         <option value="0">Microphone + system audio</option><option value="1">Microphone only</option><option value="2">System audio only</option>
       </select>
-      ${live.active ? `<button id="home-stop-recording" class="danger" ${live.state === "stopping" ? "disabled" : ""}>${live.state === "stopping" ? "Finishing…" : "Stop recording"}</button>` : `<button id="start-recording" class="primary" ${state.model.path && !startingRecording ? "" : "disabled"}>${startingRecording ? "Starting…" : "Start recording"}</button>`}
+      ${!live.active ? modelPicker("recording", startingRecording) : ""}
+      ${live.active ? `<button id="home-stop-recording" class="danger" ${live.state === "stopping" ? "disabled" : ""}>${live.state === "stopping" ? "Finishing…" : "Stop recording"}</button>` : `<button id="start-recording" class="primary" ${canUseModel("recording") && !startingRecording ? "" : "disabled"}>${startingRecording ? "Starting…" : "Start recording"}</button>`}
     </section>`;
+  bindModelPicker("recording", "#start-recording", () => !startingRecording && !state.live.active);
   $("#audio-source").value = live.mode;
   $("#audio-source").onchange = async (e) => {
     const control = e.target;
@@ -471,11 +498,13 @@ function renderHomeRecording() {
     }
   };
   if ($("#start-recording")) $("#start-recording").onclick = async () => {
-    if (startingRecording || !state.model.path) return;
+    if (startingRecording || !canUseModel("recording")) return;
+    const modelId = selectedModel("recording");
     startingRecording = true;
     renderHomeRecording();
     try {
-      await rpc("start");
+      await rpc("start", modelId || null);
+      modelChoices.recording = "";
     } catch (e) {
       error(e);
     } finally {
@@ -530,10 +559,47 @@ function renderHomeSessions() {
   container.scrollTop = scrollTop;
   bindRows();
 }
+function modelStatus(id) {
+  return state.modelInventory.statuses?.[id] || {};
+}
+function installedModels() {
+  return state.modelCatalog.filter((m) => modelStatus(m.id).path);
+}
+function selectedModel(kind) {
+  const choice = modelChoices[kind];
+  if (choice && modelStatus(choice).path) return choice;
+  return !state.settings.askModel && state.model.path ? state.model.id || "" : "";
+}
+function canUseModel(kind) {
+  return state.modelCatalog.length ? !!selectedModel(kind) : !!state.model.path;
+}
+function modelPicker(kind, disabled = false) {
+  const installed = installedModels();
+  if (!installed.length) return "";
+  const selected = selectedModel(kind);
+  return `<label class="model-picker"><span>Model</span><select id="${kind}-model" ${disabled ? "disabled" : ""}>
+    <option value="" disabled ${selected ? "" : "selected"}>Choose a model</option>
+    ${installed.map((m) => `<option value="${escape(m.id)}" ${m.id === selected ? "selected" : ""}>${escape(m.use)}${m.id === state.model.id ? " (default)" : ""}</option>`).join("")}
+    </select></label>`;
+}
+function bindModelPicker(kind, button, ready) {
+  const picker = $(`#${kind}-model`);
+  if (!picker) return;
+  picker.onchange = (event) => {
+    modelChoices[kind] = event.target.value;
+    if ($(button)) $(button).disabled = !ready() || !canUseModel(kind);
+  };
+}
+function refreshModelPickers() {
+  if (view !== "new") return;
+  renderHomeRecording();
+  renderFiles();
+  renderURL();
+}
 function modelNotice() {
-  return state.model.path
-    ? ""
-    : `<div class="waiting-model">${escape(state.model.state === "checking" ? "Verifying transcription model…" : "Choose a transcription model to get started.")} <button class="text-button" id="open-model">Open settings</button></div>`;
+  if (state.model.path || installedModels().length) return "";
+  const checking = state.model.state === "checking";
+  return `<div class="waiting-model">${checking ? "Verifying transcription models…" : "Download a model to record or import audio."} <button class="text-button" id="open-model">Set up models</button></div>`;
 }
 // Recheck after users install tools outside the app; no restart is needed.
 function renderDependencyChecks() {
@@ -584,7 +650,7 @@ function updateImportAvailability() {
   }
   if ($("#choose-files")) $("#choose-files").disabled = !report.file?.ready;
   syncURLButton();
-  if ($("#enqueue-url")) $("#enqueue-url").disabled = !report.url?.ready || enqueuingURL;
+  if ($("#enqueue-url")) $("#enqueue-url").disabled = !report.url?.ready || enqueuingURL || !canUseModel("url");
 }
 
 async function refreshDependencies(retryFiles = false) {
@@ -637,6 +703,9 @@ async function setFiles(paths) {
     if (view === "new") renderFiles();
   }
 }
+function filesReady() {
+  return !enqueuingFiles && files.length > 0 && !files.some((f) => f.pending || f.error) && state.dependencies.file?.ready;
+}
 function renderFiles() {
   if (!$("#files")) return;
   $("#files").innerHTML = files
@@ -655,14 +724,16 @@ function renderFiles() {
         }),
     );
   $("#file-actions").innerHTML = files.length
-    ? `<div class="import-actions"><span class="muted">${files.length} file${files.length === 1 ? "" : "s"} selected</span><button id="enqueue-files" class="primary" ${enqueuingFiles || files.some((f) => f.pending || f.error) || !state.dependencies.file?.ready ? "disabled" : ""}>${enqueuingFiles ? "Adding…" : "Add to queue"}</button></div>`
+    ? `<div class="import-actions"><span class="muted">${files.length} file${files.length === 1 ? "" : "s"} selected</span>${modelPicker("files", enqueuingFiles)}<button id="enqueue-files" class="primary" ${!filesReady() || !canUseModel("files") ? "disabled" : ""}>${enqueuingFiles ? "Adding…" : "Add to queue"}</button></div>`
     : "";
   files.forEach((f, i) => {
     if (f.meta && !f.error) bindRange(`file-range-${i}`, f.rangeDraft, f.meta.duration);
   });
+  bindModelPicker("files", "#enqueue-files", filesReady);
   if ($("#enqueue-files"))
     $("#enqueue-files").onclick = async () => {
-      if (enqueuingFiles || files.some((f) => f.pending || f.error)) return;
+      if (!filesReady() || !canUseModel("files")) return;
+      const modelId = selectedModel("files");
       enqueuingFiles = true;
       try {
         // Validate every selection first. Remove only successfully queued files,
@@ -670,10 +741,13 @@ function renderFiles() {
         const entries = files.map((file) => ({ file, range: readRange(file.rangeDraft, file.meta.duration) }));
         renderFiles();
         for (const { file, range } of entries) {
-          await rpc("enqueue", { sources: [file.path], kind: "file", range });
+          await rpc("enqueue", { sources: [file.path], kind: "file", range, ...(modelId ? { modelId } : {}) });
           files = files.filter((f) => f !== file);
         }
-        if (!files.length && view === "new") navigate("queue");
+        if (!files.length) {
+          modelChoices.files = "";
+          if (view === "new") navigate("queue");
+        }
       } catch (e) {
         error(e);
       } finally {
@@ -728,12 +802,14 @@ function syncURLButton() {
 function renderURL() {
   if (!urlMeta || !$("#url-details")) return;
   $("#url-details").innerHTML =
-    `<div class="metadata"><label class="field"><span>Transcript name</span><input id="url-title" maxlength="200" value="${escape(urlTitle ?? urlMeta.title)}" placeholder="${escape(urlMeta.title)}" aria-describedby="url-title-help"></label><p id="url-title-help" class="range-help">Leave blank to use the source title.</p><small>${duration(urlMeta.duration)}</small>${rangeFields("url-range", urlRange)}</div><div class="import-actions"><label><input id="retain-media" type="checkbox" ${retainMedia ? "checked" : ""}>Keep downloaded media for playback</label><button class="primary" id="enqueue-url" ${state.dependencies.url?.ready && !enqueuingURL ? "" : "disabled"}>${enqueuingURL ? "Adding…" : "Add to queue"}</button></div>`;
+    `<div class="metadata"><label class="field"><span>Transcript name</span><input id="url-title" maxlength="200" value="${escape(urlTitle ?? urlMeta.title)}" placeholder="${escape(urlMeta.title)}" aria-describedby="url-title-help"></label><p id="url-title-help" class="range-help">Leave blank to use the source title.</p><small>${duration(urlMeta.duration)}</small>${rangeFields("url-range", urlRange)}</div><div class="import-actions"><label><input id="retain-media" type="checkbox" ${retainMedia ? "checked" : ""}>Keep downloaded media for playback</label>${modelPicker("url", enqueuingURL)}<button class="primary" id="enqueue-url" ${state.dependencies.url?.ready && !enqueuingURL && canUseModel("url") ? "" : "disabled"}>${enqueuingURL ? "Adding…" : "Add to queue"}</button></div>`;
   bindRange("url-range", urlRange, urlMeta.duration);
   $("#url-title").oninput = (e) => { urlTitle = e.target.value; };
   $("#retain-media").onchange = (e) => (retainMedia = e.target.checked);
+  bindModelPicker("url", "#enqueue-url", () => state.dependencies.url?.ready && !enqueuingURL);
   $("#enqueue-url").onclick = async () => {
-    if (enqueuingURL || !urlMeta) return;
+    if (enqueuingURL || !urlMeta || !canUseModel("url")) return;
+    const modelId = selectedModel("url");
     const version = urlVersion;
     enqueuingURL = true;
     const b = $("#enqueue-url");
@@ -745,6 +821,7 @@ function renderURL() {
         retain: $("#retain-media").checked,
         range: readRange(urlRange, urlMeta.duration),
         title: (urlTitle || "").trim(),
+        ...(modelId ? { modelId } : {}),
       });
       if (version === urlVersion) {
         urlMeta = null;
@@ -752,6 +829,7 @@ function renderURL() {
         urlTitle = null;
         urlRange = { start: "", end: "" };
         urlVersion++;
+        modelChoices.url = "";
         retainMedia = false;
         if (view === "new") navigate("queue");
       }
@@ -1042,6 +1120,9 @@ function updateRecordingBanner() {
   if (!active && state.live.error && selected?.id === state.live.sessionId)
     error(state.live.error);
 }
+function sessionModelName(session) {
+  return state.modelCatalog.find((model) => model.id === session.modelId)?.name || "";
+}
 function renderSession() {
   if (!selected) return;
   const s = selected;
@@ -1053,7 +1134,7 @@ function renderSession() {
   page(
     `<div id="recording-banner"></div>
     <div class="session-heading"><h1 id="session-title">${escape(s.title)}</h1><button id="rename-session" class="icon-button" aria-label="Rename session" title="Rename session">${icon("edit")}</button></div>
-    <div class="session-meta" id="session-meta">${escape(label(s.type))} · ${date(s.created)} · ${duration(s.duration)}<br>${escape(s.source)}${rangeLabel(s.range) ? `<br>Selected range: ${rangeLabel(s.range)}` : ""}</div>
+    <div class="session-meta" id="session-meta">${escape(label(s.type))} · ${date(s.created)} · ${duration(s.duration)}<br>${escape(s.source)}${sessionModelName(s) ? `<br>${escape(sessionModelName(s))}` : ""}${rangeLabel(s.range) ? `<br>Selected range: ${rangeLabel(s.range)}` : ""}</div>
     <div class="session-actions">${s.mediaPath ? '<button id="review-media">Play media</button>' : ""}<button id="open-source">${sourceLabel}</button><button id="delete-session" class="danger">Delete session</button></div>
     <div class="viewer-toolbar" role="toolbar" aria-label="Transcript display">
       <select id="display-mode" aria-label="Transcript display"><option value="clean">Text only · paragraphs</option><option value="continuous">Text only · single line</option><option value="timestamps">Timestamps</option><option value="sources">Sources + timestamps</option></select>
@@ -1273,12 +1354,105 @@ function bindAppearanceSettings() {
     };
   });
 }
+function renderModelLibrary() {
+  const library = view === "settings" && $("#model-library");
+  if (!library) return;
+  const inventory = state.modelInventory, installed = installedModels();
+  const disabled = inventory.busy ? "disabled" : "";
+  const chosenDefault = state.settings.defaultModel || "large-v3-turbo";
+  library.innerHTML = `<ul class="model-library">${state.modelCatalog.map((m) => {
+    const status = modelStatus(m.id), activeDownload = inventory.download?.id === m.id;
+    const note = status.path ? (status.managed ? "Installed" : "Available from disk") : formatBytes(m.bytes);
+    return `<li class="model-entry">
+      <div><strong>${escape(m.use)}</strong>${m.id === chosenDefault && status.path ? '<span class="model-tag">Default</span>' :
+        m.id === "large-v3-turbo-q5" && !installed.length ? '<span class="model-tag">Recommended</span>' : ""}
+        <small>${escape(m.name)} · ${escape(note)}</small>
+        <p>${escape(m.description)}</p>
+        ${activeDownload ? '<progress id="model-download-progress" aria-label="Model download progress"></progress><small id="model-download-status" role="status"></small>' : ""}
+        ${status.state === "missing" && status.detail?.includes("SHA-256") ? `<small class="field-error">${escape(status.detail)}</small>` : ""}
+      </div>
+      ${status.path
+        ? (status.managed ? `<button data-model-remove="${escape(m.id)}" aria-label="Remove ${escape(m.name)}" ${disabled}>Remove</button>` : "")
+        : `<button data-model-download="${escape(m.id)}" aria-label="Download ${escape(m.name)}" class="${m.id === "large-v3-turbo-q5" && !installed.length ? "primary" : ""}" ${disabled}>${activeDownload ? "Downloading…" : "Download"}</button>`}
+    </li>`;
+  }).join("")}</ul>
+  <div class="model-preferences">
+    <label class="field"><span>Default model</span><select id="model-default" ${!installed.length || savingModelPreference ? "disabled" : ""}>
+      ${installed.some((m) => m.id === chosenDefault) ? "" : '<option value="" selected disabled>Choose an installed model</option>'}
+      ${installed.map((m) => `<option value="${escape(m.id)}" ${m.id === chosenDefault ? "selected" : ""}>${escape(m.use)}</option>`).join("")}</select></label>
+    <label class="field"><span>Before transcription</span><select id="model-behavior" ${savingModelPreference ? "disabled" : ""}>
+      <option value="default" ${state.settings.askModel ? "" : "selected"}>Use my default</option>
+      <option value="ask" ${state.settings.askModel ? "selected" : ""}>Ask each time</option></select></label>
+  </div>
+  <p>Choose a different installed model before you start a recording or queue an import.</p>`;
+  library.querySelectorAll("[data-model-download]").forEach((button) => {
+    button.onclick = () => changeInstalledModel(button, "downloadModel", button.dataset.modelDownload);
+  });
+  library.querySelectorAll("[data-model-remove]").forEach((button) => {
+    button.onclick = () => {
+      const id = button.dataset.modelRemove, model = state.modelCatalog.find((m) => m.id === id);
+      if (window.confirm(`Remove ${model.name}? You can download it again from Settings.`))
+        changeInstalledModel(button, "removeModel", id);
+    };
+  });
+  $("#model-default").onchange = (event) => saveModelPreference(event.target.value, !!state.settings.askModel);
+  $("#model-behavior").onchange = (event) => saveModelPreference("", event.target.value === "ask");
+  updateModelTransfer();
+}
+function updateModelTransfer() {
+  if (view !== "settings") return;
+  const progress = $("#model-download-progress"), label = $("#model-download-status");
+  const transfer = state.modelInventory.download;
+  const model = state.modelCatalog.find((m) => m.id === transfer?.id);
+  if (!progress || !label || !model) return;
+  progress.max = model.bytes;
+  progress.value = transfer.bytes;
+  label.textContent = transfer.bytes >= model.bytes ? "Verifying download…" :
+    `${formatBytes(transfer.bytes)} of ${formatBytes(model.bytes)}`;
+}
+async function changeInstalledModel(button, operation, id) {
+  button.disabled = true;
+  try {
+    await rpc(operation, id);
+    toast(operation === "downloadModel" ? "Model ready" : "Model removed");
+  } catch (e) {
+    error(e);
+  } finally {
+    button.disabled = false;
+  }
+}
+async function saveModelPreference(id, ask) {
+  if (savingModelPreference) return;
+  savingModelPreference = true;
+  renderModelLibrary();
+  try {
+    await rpc("modelPreference", { id, ask });
+  } catch (e) {
+    error(e);
+  } finally {
+    savingModelPreference = false;
+    renderModelLibrary();
+  }
+}
 function renderSettings() {
-  const m = state.model,
-    s = state.settings;
+  const s = state.settings;
   page(
-    `<h1 class="visually-hidden">Settings</h1>${appearanceSettings()}<div class="settings-group"><h2>Whisper Large v3 Turbo</h2><div class="model-status"><strong>${escape({ reused: "Existing model verified", downloaded: "Model downloaded", checking: "Checking existing models…", missing: "Model required" }[m.state] || m.state)}</strong><code>${escape(m.path || m.detail || "Choose an existing model below.")}</code><small id="tensor-acceleration" role="status">${escape(state.tensorAcceleration || "Tensor acceleration status appears after Whisper loads.")}</small></div><p>Model format and SHA-256 checksum must match Whisper Large v3 Turbo.</p><label class="field"><span>Existing model path</span><input id="model-path" value="${escape(s.modelPath || m.path || "")}" placeholder="/path/to/ggml-large-v3-turbo.bin"></label><label class="field"><span>Additional model directory</span><input id="model-dir" value="${escape(s.modelDir || "")}" placeholder="Optional directory to search"></label><div class="controls"><button id="choose-model">Choose model…</button><button id="verify-model">Save and verify model</button>${m.path ? "" : '<button id="download-model">Download model (1.6 GB)</button>'}</div></div><div class="settings-group"><h2>Recognition</h2><label class="field"><span>Language</span><select id="language"><option value="auto">Automatic (English, Filipino, Taglish, other languages)</option><option value="en">English</option><option value="tl">Filipino / Tagalog</option></select></label><label class="field"><span>Vocabulary hints (optional)</span><textarea id="context-prompt" aria-describedby="vocabulary-help" placeholder="e.g. Tala, Ateneo de Manila, Kubernetes, barangay"></textarea></label><p id="vocabulary-help">Help Whisper recognize unusual names, acronyms, and technical terms by listing words you expect to hear, or adding a short description of the recording. For example: “A Taglish lecture about Kubernetes at Ateneo de Manila.” This is a recognition hint, not a replacement list or an instruction to rewrite text. It may improve spelling but does not guarantee it. Leave blank for general recordings. Applies to new audio in live, file, and URL transcriptions.</p><p>Use Automatic for mixed languages. Translation is disabled.</p><label><input id="skip-quiet-imports" type="checkbox" aria-describedby="skip-quiet-help" ${s.skipQuietImports ? "checked" : ""}> Skip nearly silent import windows</label><p id="skip-quiet-help">Speeds up file and URL imports with long pauses by skipping windows that stay nearly silent throughout. Source timestamps are preserved. Leave off for very faint recordings.</p><button id="save-settings" class="primary">Save settings</button></div><div class="settings-group"><h2>Application</h2><label><input id="menu-bar-icon" type="checkbox" ${s.menuBarIcon ? "checked" : ""}> Show Tala in the menu bar</label><p>Off by default. Enable quick recording controls in the menu bar. You can always reopen Tala from the Dock.</p></div><div class="settings-group"><h2>Media tools</h2><p>Tala uses FFmpeg for media files and yt-dlp for supported links.</p><div id="dependency-checks" aria-live="polite"></div>${signInHelper()}</div><div class="settings-group"><h2>Storage</h2><p>${escape(state.output || "~/Documents/Tala/")}<br>Temporary audio is deleted after processing.</p><button id="open-storage">Open transcript folder</button></div>`,
+    `<h1 class="visually-hidden">Settings</h1>
+    <section class="settings-group" aria-labelledby="models-heading">
+      <h2 id="models-heading">Transcription models</h2>
+      <p>Download one to get started. Installed models work offline.</p>
+      <div id="model-library"></div>
+      <small id="tensor-acceleration" class="muted" role="status">${escape(state.tensorAcceleration || "Tensor acceleration status appears after Whisper loads.")}</small>
+      <details class="model-file-settings">
+        <summary>Use an existing model file</summary>
+        <label class="field"><span>Existing model path</span><input id="model-path" value="${escape(s.modelPath || "")}" placeholder="/path/to/ggml-model.bin"></label>
+        <label class="field"><span>Additional model directory</span><input id="model-dir" value="${escape(s.modelDir || "")}" placeholder="Optional directory to search"></label>
+        <div class="controls"><button id="choose-model">Choose model file…</button><button id="verify-model">Save and verify model</button></div>
+      </details>
+    </section>
+    ${appearanceSettings()}<div class="settings-group"><h2>Recognition</h2><label class="field"><span>Language</span><select id="language"><option value="auto">Automatic (English, Filipino, Taglish, other languages)</option><option value="en">English</option><option value="tl">Filipino / Tagalog</option></select></label><label class="field"><span>Vocabulary hints (optional)</span><textarea id="context-prompt" aria-describedby="vocabulary-help" placeholder="e.g. Tala, Ateneo de Manila, Kubernetes, barangay"></textarea></label><p id="vocabulary-help">Help Whisper recognize unusual names, acronyms, and technical terms by listing words you expect to hear, or adding a short description of the recording. For example: “A Taglish lecture about Kubernetes at Ateneo de Manila.” This is a recognition hint, not a replacement list or an instruction to rewrite text. It may improve spelling but does not guarantee it. Leave blank for general recordings. Applies to new audio in live, file, and URL transcriptions.</p><p>Use Automatic for mixed languages. Translation is disabled.</p><label><input id="skip-quiet-imports" type="checkbox" aria-describedby="skip-quiet-help" ${s.skipQuietImports ? "checked" : ""}> Skip nearly silent import windows</label><p id="skip-quiet-help">Speeds up file and URL imports with long pauses by skipping windows that stay nearly silent throughout. Source timestamps are preserved. Leave off for very faint recordings.</p><button id="save-settings" class="primary">Save settings</button></div><div class="settings-group"><h2>Application</h2><label><input id="menu-bar-icon" type="checkbox" ${s.menuBarIcon ? "checked" : ""}> Show Tala in the menu bar</label><p>Off by default. Enable quick recording controls in the menu bar. You can always reopen Tala from the Dock.</p></div><div class="settings-group"><h2>Media tools</h2><p>Tala uses FFmpeg for media files and yt-dlp for supported links.</p><div id="dependency-checks" aria-live="polite"></div>${signInHelper()}</div><div class="settings-group"><h2>Storage</h2><p>${escape(state.output || "~/Documents/Tala/")}<br>Temporary audio is deleted after processing.</p><button id="open-storage">Open transcript folder</button></div>`,
   );
+  renderModelLibrary();
   bindAppearanceSettings();
   bindSignInHelper();
   renderDependencyChecks();
@@ -1301,8 +1475,7 @@ function renderSettings() {
     button.disabled = true;
     try {
       const settings = readSettings();
-      await rpc("settings", settings);
-      state.settings = settings;
+      state.settings = (await rpc("settings", settings)) || settings;
       renderSettings();
       toast("Model verified");
     } catch (e) {
@@ -1311,27 +1484,12 @@ function renderSettings() {
       if ($("#verify-model")) $("#verify-model").disabled = false;
     }
   };
-  if ($("#download-model"))
-    $("#download-model").onclick = async () => {
-      const b = $("#download-model");
-      b.disabled = true;
-      try {
-        await rpc("downloadModel");
-        toast("Model ready");
-        state.settings = (await rpc("snapshot")).settings;
-        renderSettings();
-      } catch (e) {
-        error(e);
-        b.disabled = false;
-      }
-    };
   $("#save-settings").onclick = async () => {
     const b = $("#save-settings");
     b.disabled = true;
     try {
       const settings = readSettings();
-      await rpc("settings", settings);
-      state.settings = settings;
+      state.settings = (await rpc("settings", settings)) || settings;
       renderSettings();
       toast("Settings saved");
     } catch (e) {

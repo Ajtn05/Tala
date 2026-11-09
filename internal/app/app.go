@@ -40,15 +40,17 @@ type Job struct {
 	Elapsed     float64                `json:"elapsed"`
 	Error       string                 `json:"error,omitempty"`
 	SessionID   string                 `json:"sessionId,omitempty"`
+	ModelID     string                 `json:"modelId,omitempty"`
 	Retain      bool                   `json:"retain"`
 	Range       media.TimeRange        `json:"range,omitempty"`
 	Download    media.DownloadProgress `json:"download,omitempty"`
 }
 
 type ImportOptions struct {
-	Retain bool
-	Range  media.TimeRange
-	Title  string
+	Retain  bool
+	Range   media.TimeRange
+	Title   string
+	ModelID string
 }
 
 func (j Job) importTitle(sourceTitle string) string {
@@ -62,36 +64,41 @@ type Live struct {
 	Active    bool       `json:"active"`
 	State     string     `json:"state"`
 	Mode      audio.Mode `json:"mode"`
+	ModelID   string     `json:"modelId,omitempty"`
 	SessionID string     `json:"sessionId"`
 	Started   time.Time  `json:"started"`
 	Error     string     `json:"error,omitempty"`
 }
 type Controller struct {
-	mu          sync.Mutex
-	cond        *sync.Cond
-	Store       *session.Store
-	Models      models.Manager
-	engineMu    sync.Mutex
-	engine      *transcriber.Transcriber
-	tensorMode  string
-	Model       models.Status
-	live        Live
-	liveCancel  context.CancelFunc
-	liveDone    chan struct{}
-	jobs        []Job
-	cancelJob   context.CancelFunc
-	activeJob   string
-	ctx         context.Context
-	cancel      context.CancelFunc
-	wake        chan struct{}
-	Events      chan Event
-	workerDone  chan struct{}
-	resync      bool
-	modelBusy   bool
-	settingsMu  sync.Mutex
-	recognition *models.Settings
-	headless    bool
-	ownedJobs   map[string]bool
+	mu            sync.Mutex
+	cond          *sync.Cond
+	Store         *session.Store
+	Models        models.Manager
+	engineMu      sync.Mutex
+	engine        *transcriber.Transcriber
+	enginePath    string
+	tensorMode    string
+	Model         models.Status
+	live          Live
+	liveCancel    context.CancelFunc
+	liveDone      chan struct{}
+	jobs          []Job
+	cancelJob     context.CancelFunc
+	activeJob     string
+	ctx           context.Context
+	cancel        context.CancelFunc
+	wake          chan struct{}
+	Events        chan Event
+	workerDone    chan struct{}
+	resync        bool
+	modelBusy     bool
+	modelScanDone bool
+	modelStates   map[string]models.Status
+	modelDownload modelTransfer
+	settingsMu    sync.Mutex
+	recognition   *models.Settings
+	headless      bool
+	ownedJobs     map[string]bool
 }
 
 func New(output string) (*Controller, error) { return newController(output, models.Default()) }
@@ -105,7 +112,7 @@ func newController(output string, manager models.Manager) (*Controller, error) {
 	return newControllerWithOptions(output, manager, nil)
 }
 func newControllerWithOptions(output string, manager models.Manager, recognition *models.Settings) (*Controller, error) {
-	c := &Controller{Store: &session.Store{Dir: output}, Models: manager, wake: make(chan struct{}, 1), workerDone: make(chan struct{}), Events: make(chan Event, 128), recognition: recognition, headless: recognition != nil, ownedJobs: map[string]bool{}}
+	c := &Controller{Store: &session.Store{Dir: output}, Models: manager, wake: make(chan struct{}, 1), workerDone: make(chan struct{}), Events: make(chan Event, 128), Model: models.Status{State: "checking"}, recognition: recognition, headless: recognition != nil, ownedJobs: map[string]bool{}}
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 	c.cond = sync.NewCond(&c.mu)
 	if e := os.MkdirAll(output, 0700); e != nil {
@@ -180,57 +187,40 @@ func (c *Controller) Snapshot() any {
 	c.mu.Lock()
 	live, model, tensorAcceleration := c.live, c.Model, c.tensorMode
 	jobs := append([]Job{}, c.jobs...)
+	modelState := c.modelInventoryLocked()
 	c.mu.Unlock()
 	items, e := c.Store.List()
 	if e != nil {
 		c.Emit("error", e.Error())
 	}
 	return map[string]any{
-		"live": live, "model": model, "jobs": jobs, "sessions": items,
+		"live": live, "model": model, "modelCatalog": models.Catalog(), "modelInventory": modelState, "jobs": jobs, "sessions": items,
 		"settings": c.Models.Settings(), "dependencies": media.Dependencies(), "output": c.Store.Dir,
 		"tensorAcceleration": tensorAcceleration,
 	}
 }
-func (c *Controller) Discover() {
-	c.mu.Lock()
-	if c.modelBusy {
-		c.mu.Unlock()
-		return
-	}
-	c.modelBusy = true
-	c.Model = models.Status{State: "checking", Detail: "Looking for an existing model and verifying its checksum…"}
-	c.emitLocked("model", c.Model)
-	c.mu.Unlock()
-	status, e := c.Models.Discover(c.ctx)
-	if e != nil && status.Detail == "" {
-		status.Detail = e.Error()
-	}
-	c.mu.Lock()
-	c.Model = status
-	c.modelBusy = false
-	c.emitLocked("model", status)
-	c.mu.Unlock()
-}
-func (c *Controller) ensureEngine(ctx context.Context, reportActivity bool) error {
-	c.engineMu.Lock()
-	defer c.engineMu.Unlock()
+
+// The caller holds engineMu for model switching and decoding.
+func (c *Controller) ensureEngine(ctx context.Context, model models.Status, reportActivity bool) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if c.engine != nil {
-		return nil
-	}
-	c.mu.Lock()
-	status := c.Model
-	c.mu.Unlock()
-	if status.Path == "" {
+	if model.Path == "" {
+		if spec, ok := models.Lookup(model.ID); ok {
+			return fmt.Errorf("model verification required: install %s in Settings", spec.Name)
+		}
 		return errors.New("wait for model verification, or choose a valid model in Settings")
 	}
+	if c.engine != nil && c.enginePath == model.Path {
+		return nil
+	}
+	c.closeEngine()
 	if reportActivity {
-		c.Emit("activity", "Loading Whisper…")
+		spec, _ := models.Lookup(model.ID)
+		c.Emit("activity", "Loading "+spec.Name+"…")
 	}
 	settings := c.recognitionSettings()
-	engine, e := transcriber.New(transcriber.Config{ModelPath: status.Path, Language: settings.Language, Prompt: settings.Prompt})
+	engine, e := transcriber.New(transcriber.Config{ModelPath: model.Path, Language: settings.Language, Prompt: settings.Prompt})
 	if e != nil {
 		return e
 	}
@@ -239,6 +229,7 @@ func (c *Controller) ensureEngine(ctx context.Context, reportActivity bool) erro
 		return err
 	}
 	c.engine = engine
+	c.enginePath = model.Path
 	activity := "Model ready"
 	if runtime.GOOS == "darwin" {
 		activity = "Tensor acceleration inactive"
@@ -255,19 +246,18 @@ func (c *Controller) ensureEngine(ctx context.Context, reportActivity bool) erro
 	}
 	return nil
 }
-func (c *Controller) Transcribe(ctx context.Context, samples []float32) ([]transcriber.Segment, error) {
-	return c.transcribe(ctx, samples, false)
+func (c *Controller) closeEngine() {
+	if c.engine != nil {
+		_ = c.engine.Close()
+		c.engine = nil
+		c.enginePath = ""
+	}
 }
 
-func (c *Controller) transcribe(ctx context.Context, samples []float32, skipQuiet bool) ([]transcriber.Segment, error) {
-	if e := c.ensureEngine(ctx, true); e != nil {
-		return nil, e
+func (c *Controller) decode(ctx context.Context, model models.Status, samples []float32) ([]transcriber.Segment, error) {
+	if err := c.ensureEngine(ctx, model, true); err != nil {
+		return nil, err
 	}
-	if skipQuiet && quietImportWindow(samples) {
-		return nil, ctx.Err()
-	}
-	c.engineMu.Lock()
-	defer c.engineMu.Unlock()
 	s := c.recognitionSettings()
 	c.engine.SetOptions(s.Language, s.Prompt)
 	return c.engine.Transcribe(ctx, samples)
@@ -291,27 +281,33 @@ func (c *Controller) SetMode(mode audio.Mode) error {
 	c.emitLocked("live", c.live)
 	return nil
 }
-func (c *Controller) Start() error {
+func (c *Controller) Start() error { return c.StartWithModel("") }
+
+func (c *Controller) StartWithModel(id string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.live.Active {
 		return errors.New("a recording is already active")
 	}
-	if c.Model.Path == "" {
-		return errors.New("a verified Whisper model is required; open Settings")
+	if c.modelBusy && c.modelDownload.ID == "" {
+		return errors.New("wait for model verification to finish")
+	}
+	model, err := c.modelForRequestLocked(id, true)
+	if err != nil {
+		return err
 	}
 	source := []string{"Microphone + System Audio", "Microphone", "System Audio"}[c.live.Mode]
-	v, e := c.Store.Create("live", "Recording · "+time.Now().Format("Jan 2, 3:04 PM"), source)
+	v, e := c.Store.CreateWithModel("live", "Recording · "+time.Now().Format("Jan 2, 3:04 PM"), source, model.ID)
 	if e != nil {
 		return e
 	}
 	ctx, cancel := context.WithCancel(c.ctx)
 	c.liveCancel = cancel
 	c.liveDone = make(chan struct{})
-	c.live = Live{Active: true, State: "loading", Mode: c.live.Mode, SessionID: v.ID, Started: time.Now()}
+	c.live = Live{Active: true, State: "loading", Mode: c.live.Mode, ModelID: model.ID, SessionID: v.ID, Started: time.Now()}
 	c.emitLocked("live", c.live)
 	c.emitLocked("sessions", nil)
-	go c.runLive(ctx, v.ID, c.live.Mode, c.liveDone)
+	go c.runLive(ctx, v.ID, c.live.Mode, model, c.liveDone)
 	return nil
 }
 func (c *Controller) append(id string, seg transcriber.Segment) error {
@@ -321,9 +317,14 @@ func (c *Controller) append(id string, seg transcriber.Segment) error {
 	}
 	return e
 }
-func (c *Controller) runLive(ctx context.Context, id string, mode audio.Mode, done chan struct{}) {
+func (c *Controller) runLive(ctx context.Context, id string, mode audio.Mode, model models.Status, done chan struct{}) {
 	var duration time.Duration
-	err := c.ensureEngine(c.ctx, true)
+	c.engineMu.Lock()
+	err := c.ensureEngine(ctx, model, true)
+	c.engineMu.Unlock()
+	if errors.Is(err, context.Canceled) && ctx.Err() != nil {
+		err = nil
+	}
 	if err == nil && ctx.Err() == nil {
 		c.mu.Lock()
 		c.live.State = "recording"
@@ -332,7 +333,11 @@ func (c *Controller) runLive(ctx context.Context, id string, mode audio.Mode, do
 		input := func(capture context.Context, emit func(audio.Frame) error) error {
 			return audio.Capture(capture, mode, emit)
 		}
-		duration, err = recording.Run(ctx, input, c.Transcribe, func(seg transcriber.Segment) error {
+		duration, err = recording.Run(ctx, input, func(decodeCtx context.Context, samples []float32) ([]transcriber.Segment, error) {
+			c.engineMu.Lock()
+			defer c.engineMu.Unlock()
+			return c.decode(decodeCtx, model, samples)
+		}, func(seg transcriber.Segment) error {
 			return c.append(id, seg)
 		})
 	}
@@ -460,7 +465,14 @@ func (c *Controller) EnqueueWithOptions(source, kind string, options ImportOptio
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	job := Job{ID: session.ID(), Title: filepath.Base(source), CustomTitle: title, Source: source, Kind: kind, State: "waiting", Retain: options.Retain, Range: selection}
+	if options.ModelID != "" && c.modelBusy && c.modelDownload.ID == "" {
+		return Job{}, errors.New("wait for model verification to finish")
+	}
+	model, err := c.modelForRequestLocked(options.ModelID, options.ModelID != "")
+	if err != nil {
+		return Job{}, err
+	}
+	job := Job{ModelID: model.ID, ID: session.ID(), Title: filepath.Base(source), CustomTitle: title, Source: source, Kind: kind, State: "waiting", Retain: options.Retain, Range: selection}
 	job.Title = job.importTitle(job.Title)
 	c.jobs = append(c.jobs, job)
 	if e := c.saveJobsLocked(); e != nil {
@@ -560,6 +572,9 @@ func (c *Controller) CancelJob(id string) error {
 func (c *Controller) Retry(id string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.modelBusy && c.modelDownload.ID == "" {
+		return errors.New("wait for model verification to finish")
+	}
 	for i := range c.jobs {
 		j := &c.jobs[i]
 		if j.ID == id {
@@ -598,6 +613,22 @@ func (c *Controller) waitBatch(ctx context.Context, id string) error {
 	}
 	return ctx.Err()
 }
+func (c *Controller) lockBatchEngine(ctx context.Context, jobID string) error {
+	for {
+		if err := c.waitBatch(ctx, jobID); err != nil {
+			return err
+		}
+		c.engineMu.Lock()
+		c.mu.Lock()
+		live := c.live.Active
+		c.mu.Unlock()
+		if !live {
+			return nil
+		}
+		c.engineMu.Unlock()
+	}
+}
+
 func (c *Controller) worker() {
 	defer close(c.workerDone)
 	for {
@@ -608,6 +639,10 @@ func (c *Controller) worker() {
 		}
 		for {
 			c.mu.Lock()
+			if !c.modelScanDone || c.modelBusy && c.modelDownload.ID == "" {
+				c.mu.Unlock()
+				break
+			}
 			var job *Job
 			for i := range c.jobs {
 				if c.jobs[i].State == "waiting" && (!c.headless || c.ownedJobs[c.jobs[i].ID]) {
@@ -662,11 +697,28 @@ func (c *Controller) process(ctx context.Context, job Job) error {
 	}
 	started := time.Now()
 	skipQuiet := c.recognitionSettings().SkipQuietImports
+	c.mu.Lock()
+	model := c.jobModelLocked(job)
+	c.mu.Unlock()
 	var preload <-chan error
-	if c.ModelState().Path != "" {
+	if model.Path != "" {
 		ready := make(chan error, 1)
 		preload = ready
-		go func() { ready <- c.ensureEngine(ctx, c.headless) }()
+		loadCtx, cancel := context.WithCancel(ctx)
+		defer func() {
+			cancel()
+			if preload != nil {
+				<-preload
+			}
+		}()
+		go func() {
+			if err := c.lockBatchEngine(loadCtx, job.ID); err != nil {
+				ready <- err
+				return
+			}
+			defer c.engineMu.Unlock()
+			ready <- c.ensureEngine(loadCtx, model, c.headless)
+		}()
 	}
 	path := job.Source
 	var meta media.Metadata
@@ -715,7 +767,7 @@ func (c *Controller) process(ctx context.Context, job Job) error {
 		return err
 	}
 	selectedDuration := job.Range.Duration(probed.Duration)
-	v, e := c.Store.Create(job.Kind, meta.Title, job.Source)
+	v, e := c.Store.CreateWithModel(job.Kind, meta.Title, job.Source, model.ID)
 	if e != nil {
 		return e
 	}
@@ -762,9 +814,16 @@ func (c *Controller) process(ctx context.Context, job Job) error {
 				return ctx.Err()
 			}
 		}
-		segs, e := c.transcribe(ctx, samples, skipQuiet)
-		if e != nil {
-			return e
+		var segs []transcriber.Segment
+		if !skipQuiet || !quietImportWindow(samples) || model.Path == "" {
+			if e := c.lockBatchEngine(ctx, job.ID); e != nil {
+				return e
+			}
+			segs, e = c.decode(ctx, model, samples)
+			c.engineMu.Unlock()
+			if e != nil {
+				return e
+			}
 		}
 		end := offset + float64(len(samples))/16000
 		for _, seg := range segs {
@@ -854,49 +913,6 @@ func copyFile(ctx context.Context, src, dest string) error {
 	ok = true
 	return nil
 }
-func (c *Controller) Configure(s models.Settings) error {
-	c.settingsMu.Lock()
-	defer c.settingsMu.Unlock()
-	if err := s.URLAuth.Validate(); err != nil {
-		return err
-	}
-	if s.Language != "auto" && s.Language != "en" && s.Language != "tl" {
-		return errors.New("choose automatic, English, or Filipino")
-	}
-	c.mu.Lock()
-	if c.live.Active || c.activeJob != "" || c.modelBusy {
-		c.mu.Unlock()
-		return errors.New("wait for active work before changing settings")
-	}
-	c.modelBusy = true
-	c.mu.Unlock()
-	defer func() { c.mu.Lock(); c.modelBusy = false; c.mu.Unlock() }()
-	old := c.Models.Settings()
-	if s.ModelPath != old.ModelPath && s.ModelPath != "" && s.ModelPath != c.ModelState().Path {
-		if e := models.Verify(c.ctx, s.ModelPath); e != nil {
-			return e
-		}
-		c.engineMu.Lock()
-		if c.engine != nil {
-			c.engineMu.Unlock()
-			return errors.New("restart the app before switching a loaded model path")
-		}
-		c.engineMu.Unlock()
-	}
-	if e := c.Models.Save(s); e != nil {
-		return e
-	}
-	status, e := c.Models.Discover(c.ctx)
-	c.mu.Lock()
-	c.Model = status
-	c.emitLocked("model", status)
-	c.emitLocked("settings", s)
-	c.mu.Unlock()
-	if s.ModelPath == old.ModelPath && s.ModelDir == old.ModelDir {
-		return nil
-	}
-	return e
-}
 
 // URLAuth uses invocation overrides for the CLI and saved settings for the dashboard.
 func (c *Controller) URLAuth() media.URLAuth { return c.recognitionSettings().URLAuth }
@@ -930,24 +946,6 @@ func (c *Controller) SetMenuBarIcon(enabled bool) error {
 	c.Emit("settings", s)
 	return nil
 }
-func (c *Controller) DownloadModel() error {
-	c.mu.Lock()
-	if c.modelBusy {
-		c.mu.Unlock()
-		return errors.New("model verification is already running")
-	}
-	c.modelBusy = true
-	c.mu.Unlock()
-	defer func() { c.mu.Lock(); c.modelBusy = false; c.mu.Unlock() }()
-	status, e := c.Models.Ensure(c.ctx, true, func(n int64) { c.Emit("activity", fmt.Sprintf("Downloading model: %.0f MB", float64(n)/1e6)) })
-	c.mu.Lock()
-	if e == nil {
-		c.Model = status
-		c.emitLocked("model", status)
-	}
-	c.mu.Unlock()
-	return e
-}
 func (c *Controller) Delete(id string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -976,15 +974,12 @@ func (c *Controller) Close() {
 	}
 	<-c.workerDone
 	c.engineMu.Lock()
-	if c.engine != nil {
-		_ = c.engine.Close()
-		c.engine = nil
-	}
+	c.closeEngine()
 	c.engineMu.Unlock()
 }
 
 func (c *Controller) LiveState() Live           { c.mu.Lock(); defer c.mu.Unlock(); return c.live }
-func (c *Controller) ModelState() models.Status { c.mu.Lock(); defer c.mu.Unlock(); return c.Model }
+func (c *Controller) ModelState() models.Status { return c.ModelStateFor("") }
 
 // AfterEvent schedules recovery even when the final event overflowed the bounded queue.
 func (c *Controller) AfterEvent() {

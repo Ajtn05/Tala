@@ -23,7 +23,7 @@
 
 *Dashboard shown with illustrative sessions and transfer statistics.*
 
-Tala is free, open source, and runs **Whisper Large v3 Turbo locally**. No Tala account, subscription, or cloud inference is required. After the initial model download, live recording and local-file transcription work offline.
+Tala is free, open source, and runs **Whisper locally**. No Tala account, subscription, or cloud inference is required. After the initial model download, live recording and local-file transcription work offline.
 
 ## What you can do
 
@@ -52,7 +52,7 @@ Tala 1.2.0 includes FFmpeg, ffprobe, and yt-dlp. Once Whisper is set up, you can
 ### macOS
 
 1. **Install Tala.** Open `Tala.dmg` and drag Tala to Applications on macOS 14.2 or later. If macOS blocks the ad-hoc signed app, use **System Settings → Privacy & Security → Open Anyway**.
-2. **Set up Whisper.** In **Settings**, choose an existing compatible model or select **Download model (1.6 GB)**. Tala verifies the model before use.
+2. **Set up Whisper.** In **Settings → Transcription models**, download a model or choose an existing supported file. Tala verifies each model before use.
 3. **Make a transcript.** Open **New transcription** to record audio, drop a file, or paste a link. Grant audio capture and Documents access when macOS prompts you.
 
 On macOS, transcripts live in `~/Documents/Tala/`. Settings and model downloads live in `~/Library/Application Support/Tala/`.
@@ -75,6 +75,12 @@ The Linux CLI uses XDG data and config directories. On either platform, use `TAL
 
 Choose **Microphone only**, **System audio only**, or **Microphone + system audio**, then start recording. Stop to finish the transcript. In the viewer, search with **⌘F**, hover or focus a segment to **Edit**, and use **Copy text** or **Export file…** in the bottom toolbar. Corrections can be restored to their original text.
 
+### Choose a transcription model
+
+In **Settings → Transcription models**, download the models you want and set a default. **Everyday & live** uses Whisper Large v3 Turbo Q5. **Higher accuracy** uses full Whisper Large v3 for difficult recordings. **Low memory** uses Whisper Small Q5. The original **Full Turbo** is also available.
+
+The **Model** picker beside recording and in import review applies to that transcription. Set **Before transcription** to **Ask each time** if you prefer to pick for every run. Queued jobs keep their model when you change the default or retry.
+
 ### Import only the part you need
 
 Drop a file, or paste a link and choose **Fetch details**. For a link, edit **Transcript name** before queueing. Set **Start** and **End** using seconds (`90`), `MM:SS` (`1:30`), or `HH:MM:SS` (`1:02:30`). Milliseconds such as `1:30.250` also work. Blank fields use the beginning/end of the source.
@@ -96,6 +102,8 @@ Run these commands from the checkout after `make build`. Put options before inpu
 ```sh
 # Plain text, subtitles, or one selected interval.
 ./tala --transcribe lecture.mp4
+./tala --model-id small-q5 --ensure-model
+./tala --model-id small-q5 --transcribe lecture.mp4
 ./tala --format srt --transcribe lecture.mp4 > lecture.srt
 ./tala --start 1:30 --end 5:00 --transcribe lecture.mp4
 
@@ -122,7 +130,7 @@ Recognition runs on your machine. Initial model downloads and media URL imports 
 <details>
 <summary><strong>Can I use a model I already have?</strong></summary>
 
-Yes. Choose your Whisper Large v3 Turbo model in **Settings** or use `--model /path/to/ggml-large-v3-turbo.bin`. Tala verifies its SHA-256 checksum before using it in place.
+Yes. Choose a supported Whisper GGML model in **Settings** or use `--model /path/to/ggml-large-v3-turbo.bin`. Tala verifies its SHA-256 checksum before using it in place.
 
 </details>
 
@@ -136,7 +144,7 @@ Tala stores models, settings, transcripts, corrections, and queued imports outsi
 <details>
 <summary><strong>How fast and accurate is it?</strong></summary>
 
-Tala uses Whisper Large v3 Turbo, with Metal acceleration on macOS and CPU inference on Linux. On M5-class Macs running macOS 26 or later, Tala can use Metal tensor acceleration. **Settings → Whisper Large v3 Turbo** shows its status once the model loads. Speed depends on hardware, recording length, and audio content. Vocabulary hints can help with names and specialist words but do not guarantee spelling.
+Tala uses Metal acceleration on macOS and CPU inference on Linux. On M5-class Macs running macOS 26 or later, Tala can use Metal tensor acceleration. **Settings → Transcription models** shows its status once the model loads. Speed depends on hardware, recording length, and audio content. Vocabulary hints can help with names and specialist words but do not guarantee spelling.
 
 </details>
 

@@ -481,3 +481,60 @@ test("download progress appears in home and queue with bytes, speed, and ETA", a
   assert.match(queue, /<progress max="1"  aria-label="Download progress"/);
   assert.doesNotMatch(queue, /25%|0%/);
 });
+
+const pickerModels = {
+  model: { id: "large-v3-turbo", path: "/turbo.bin" },
+  modelCatalog: [
+    { id: "large-v3-turbo", use: "Full Turbo", name: "Whisper Large v3 Turbo", bytes: 1624555275 },
+    { id: "small-q5", use: "Low memory", name: "Whisper Small Q5", bytes: 190085487 },
+    { id: "large-v3", use: "Higher accuracy", name: "Whisper Large v3", bytes: 3095033483 },
+  ],
+  modelInventory: { statuses: {
+    "large-v3-turbo": { path: "/turbo.bin" },
+    "small-q5": { path: "/small.bin", managed: true },
+  }, download: {} },
+};
+
+test("a live model override is used once and leaves the default selected", async () => {
+  const h = harness({ snapshot: pickerModels });
+  await flush();
+  assert.match(h.element("#home-recording").innerHTML, /value="large-v3-turbo" selected/);
+  assert.doesNotMatch(h.element("#home-recording").innerHTML, /value="large-v3"/);
+  h.element("#recording-model").onchange({ target: { value: "small-q5" } });
+  await h.element("#start-recording").onclick();
+  assert.equal(h.requests.find(r => r.action === "start").data, "small-q5");
+  assert.match(h.element("#home-recording").innerHTML, /value="large-v3-turbo" selected/);
+});
+
+test("ask each time requires an installed model in file and URL review", async () => {
+  const h = harness({ snapshot: { ...pickerModels, settings: { language: "auto", askModel: true } } });
+  await flush();
+  h.window.receive({ type: "files", data: ["/first.wav"] });
+  await flush();
+  await h.element("#enqueue-files").onclick();
+  assert.equal(h.requests.some(r => r.action === "enqueue"), false);
+  h.element("#files-model").onchange({ target: { value: "small-q5" } });
+  await h.element("#enqueue-files").onclick();
+  assert.equal(h.requests.find(r => r.action === "enqueue").data.modelId, "small-q5");
+
+  vm.runInContext('navigate("new")', h.context);
+  typeURL(h, "https://example.org/audio");
+  await h.element("#fetch-url").onclick();
+  await h.element("#enqueue-url").onclick();
+  assert.equal(h.requests.filter(r => r.action === "enqueue").length, 1);
+  h.element("#url-model").onchange({ target: { value: "large-v3-turbo" } });
+  await h.element("#enqueue-url").onclick();
+  assert.equal(h.requests.findLast(r => r.action === "enqueue").data.modelId, "large-v3-turbo");
+});
+
+test("model downloads and the default preference use the chosen model IDs", async () => {
+  const h = harness({ snapshot: pickerModels });
+  await flush();
+  vm.runInContext('navigate("settings")', h.context);
+  assert.match(h.element("#model-library").innerHTML, /data-model-download="large-v3"/);
+  assert.match(h.element("#model-library").innerHTML, /data-model-remove="small-q5"/);
+  await h.element("#model-default").onchange({ target: { value: "small-q5" } });
+  assert.equal(h.requests.find(r => r.action === "modelPreference").data.id, "small-q5");
+  await vm.runInContext('changeInstalledModel({ disabled: false }, "downloadModel", "large-v3")', h.context);
+  assert.equal(h.requests.find(r => r.action === "downloadModel").data, "large-v3");
+});

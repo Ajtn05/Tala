@@ -32,6 +32,7 @@ type Segment struct {
 	Untimed   bool    `json:"untimed,omitempty"`
 }
 type Session struct {
+	ModelID     string            `json:"modelId,omitempty"`
 	ID          string            `json:"id"`
 	Title       string            `json:"title"`
 	Created     time.Time         `json:"created"`
@@ -80,9 +81,12 @@ func (s *Store) save(v Session) error {
 	return models.AtomicWrite(p, b)
 }
 func (s *Store) Create(kind, title, source string) (Session, error) {
+	return s.CreateWithModel(kind, title, source, "")
+}
+func (s *Store) CreateWithModel(kind, title, source, modelID string) (Session, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	v := Session{ID: ID(), Title: title, Created: time.Now(), Type: kind, Source: source, Status: "processing", Corrections: map[string]string{}}
+	v := Session{ID: ID(), ModelID: modelID, Title: title, Created: time.Now(), Type: kind, Source: source, Status: "processing", Corrections: map[string]string{}}
 	return v, s.save(v)
 }
 func (s *Store) read(id string, segments bool) (Session, error) {
