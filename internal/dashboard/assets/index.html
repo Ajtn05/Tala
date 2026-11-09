@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'"
+    />
+    <title>Tala</title>
+    <style>
+      /*STYLE*/
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <main>
+        <header class="app-header">
+          <div class="brand"><span class="mark">/*LOGO*/</span>Tala</div>
+          <div class="header-actions">
+            <button
+              id="pin"
+              class="pin-button"
+              title="Always on top"
+              aria-label="Always on top"
+              aria-pressed="false"
+            >
+              <span class="nav-icon" data-icon="pin" aria-hidden="true"></span>
+            </button>
+          </div>
+        </header>
+        <div class="workspace-bar">
+          <nav aria-label="Workspace">
+            <button data-nav="new" title="New transcription (⌘N)">
+              <span class="nav-icon" data-icon="plus" aria-hidden="true"></span>New transcription
+            </button>
+            <button data-nav="history">
+              <span class="nav-icon" data-icon="file" aria-hidden="true"></span>Sessions
+            </button>
+            <button data-nav="queue">
+              <span class="nav-icon" data-icon="queue" aria-hidden="true"></span>Queue<span id="queue-count" class="count"></span>
+            </button>
+            <button data-nav="settings">
+              <span class="nav-icon" data-icon="settings" aria-hidden="true"></span>Settings
+            </button>
+          </nav>
+          <button id="active-recording" hidden><span class="dot"></span>Recording<span class="recording-link"> · View transcript</span></button>
+          <span id="activity" role="status"></span>
+        </div>
+        <div id="content" tabindex="-1"></div>
+        <div
+          id="session-tools"
+          role="toolbar"
+          aria-label="Transcript export"
+          hidden
+        ></div>
+      </main>
+    </div>
+    <div id="toast" role="status" aria-live="polite"></div>
+    <div id="error" role="alert" hidden>
+      <span></span><button aria-label="Dismiss error">×</button>
+    </div>
+    <script>
+      window.onerror = function (message, source, line, col) {
+        document.getElementById("error").hidden = false;
+        document.querySelector("#error span").textContent =
+          String(message) + " at " + line + ":" + col;
+      };
+    </script>
+    <script>
+      /*SCRIPT*/
+    </script>
+  </body>
+</html>

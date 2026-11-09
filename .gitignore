@@ -1,0 +1,6 @@
+/.tools/
+/third_party/
+/.gocache/
+/dist/
+/tala
+.DS_Store
