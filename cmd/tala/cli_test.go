@@ -36,6 +36,7 @@ func TestCLIOptions(t *testing.T) {
 		{"--cookies", "https://example.org/cookies", "https://example.org/media"},
 		{"--cookies-from-browser", "chrome", "--cookies", "/cookies.txt", "https://example.org/media"},
 		{"--progress", "invalid", "one.wav"},
+		{"--record", "--skip-quiet-imports"},
 	} {
 		if _, err := parseOptions(args, io.Discard); err == nil {
 			t.Errorf("accepted %v", args)
@@ -49,6 +50,23 @@ func TestCLIOptions(t *testing.T) {
 		o, err := parseOptions([]string{"--progress", mode, "one.wav"}, io.Discard)
 		if err != nil || o.progress != mode {
 			t.Fatalf("progress mode %q: %+v %v", mode, o, err)
+		}
+	}
+}
+
+func TestCLIQuietImportOverride(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		set  bool
+		skip bool
+	}{
+		{[]string{"one.wav"}, false, false},
+		{[]string{"--skip-quiet-imports", "one.wav"}, true, true},
+		{[]string{"--skip-quiet-imports=false", "one.wav"}, true, false},
+	} {
+		o, err := parseOptions(tc.args, io.Discard)
+		if err != nil || o.skipQuietSet != tc.set || o.skipQuiet != tc.skip {
+			t.Fatalf("%v: %+v %v", tc.args, o, err)
 		}
 	}
 }

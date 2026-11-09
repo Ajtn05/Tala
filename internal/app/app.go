@@ -211,9 +211,12 @@ func (c *Controller) Discover() {
 	c.emitLocked("model", status)
 	c.mu.Unlock()
 }
-func (c *Controller) ensureEngine() error {
+func (c *Controller) ensureEngine(ctx context.Context, reportActivity bool) error {
 	c.engineMu.Lock()
 	defer c.engineMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if c.engine != nil {
 		return nil
 	}
@@ -223,11 +226,17 @@ func (c *Controller) ensureEngine() error {
 	if status.Path == "" {
 		return errors.New("wait for model verification, or choose a valid model in Settings")
 	}
-	c.Emit("activity", "Loading Whisper…")
+	if reportActivity {
+		c.Emit("activity", "Loading Whisper…")
+	}
 	settings := c.recognitionSettings()
 	engine, e := transcriber.New(transcriber.Config{ModelPath: status.Path, Language: settings.Language, Prompt: settings.Prompt})
 	if e != nil {
 		return e
+	}
+	if err := ctx.Err(); err != nil {
+		_ = engine.Close()
+		return err
 	}
 	c.engine = engine
 	activity := "Model ready"
@@ -241,12 +250,21 @@ func (c *Controller) ensureEngine() error {
 		c.emitLocked("tensorAcceleration", activity)
 		c.mu.Unlock()
 	}
-	c.Emit("activity", activity)
+	if reportActivity {
+		c.Emit("activity", activity)
+	}
 	return nil
 }
 func (c *Controller) Transcribe(ctx context.Context, samples []float32) ([]transcriber.Segment, error) {
-	if e := c.ensureEngine(); e != nil {
+	return c.transcribe(ctx, samples, false)
+}
+
+func (c *Controller) transcribe(ctx context.Context, samples []float32, skipQuiet bool) ([]transcriber.Segment, error) {
+	if e := c.ensureEngine(ctx, true); e != nil {
 		return nil, e
+	}
+	if skipQuiet && quietImportWindow(samples) {
+		return nil, ctx.Err()
 	}
 	c.engineMu.Lock()
 	defer c.engineMu.Unlock()
@@ -305,7 +323,7 @@ func (c *Controller) append(id string, seg transcriber.Segment) error {
 }
 func (c *Controller) runLive(ctx context.Context, id string, mode audio.Mode, done chan struct{}) {
 	var duration time.Duration
-	err := c.ensureEngine()
+	err := c.ensureEngine(c.ctx, true)
 	if err == nil && ctx.Err() == nil {
 		c.mu.Lock()
 		c.live.State = "recording"
@@ -643,6 +661,13 @@ func (c *Controller) process(ctx context.Context, job Job) error {
 		return e
 	}
 	started := time.Now()
+	skipQuiet := c.recognitionSettings().SkipQuietImports
+	var preload <-chan error
+	if c.ModelState().Path != "" {
+		ready := make(chan error, 1)
+		preload = ready
+		go func() { ready <- c.ensureEngine(ctx, c.headless) }()
+	}
 	path := job.Source
 	var meta media.Metadata
 	var err error
@@ -726,7 +751,18 @@ func (c *Controller) process(ctx context.Context, job Job) error {
 			return e
 		}
 		c.changeJob(job.ID, func(j *Job) { j.State = "transcribing" })
-		segs, e := c.Transcribe(ctx, samples)
+		if preload != nil {
+			select {
+			case err := <-preload:
+				if err != nil {
+					return err
+				}
+				preload = nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		segs, e := c.transcribe(ctx, samples, skipQuiet)
 		if e != nil {
 			return e
 		}
@@ -765,6 +801,18 @@ func (c *Controller) process(ctx context.Context, job Job) error {
 	}
 	return err
 }
+
+// quietImportWindow requires every sample to stay below -60 dBFS.
+func quietImportWindow(samples []float32) bool {
+	const peak = 0.001
+	for _, sample := range samples {
+		if !(sample > -peak && sample < peak) {
+			return false
+		}
+	}
+	return true
+}
+
 func copyFile(ctx context.Context, src, dest string) error {
 	in, e := os.Open(src)
 	if e != nil {

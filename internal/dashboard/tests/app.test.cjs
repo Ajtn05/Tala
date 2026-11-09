@@ -39,6 +39,20 @@ function harness({ deferActions = [], snapshot: overrides = {} } = {}) {
 }
 const flush = () => new Promise(setImmediate);
 
+test("the quiet import toggle is shown only in settings and saved there", async () => {
+  const h = harness();
+  await flush();
+  assert.doesNotMatch(h.element("#content").innerHTML, /Skip nearly silent import windows/);
+  vm.runInContext('navigate("settings")', h.context);
+  assert.match(h.element("#content").innerHTML, /id="skip-quiet-imports"[^>]*>/);
+  assert.doesNotMatch(h.element("#content").innerHTML, /id="skip-quiet-imports"[^>]*checked/);
+  h.element("#skip-quiet-imports").checked = true;
+  await h.element("#save-settings").onclick();
+  const save = h.requests.findLast((request) => request.action === "settings");
+  assert.equal(save.data.skipQuietImports, true);
+  assert.match(h.element("#content").innerHTML, /id="skip-quiet-imports"[^>]*checked/);
+});
+
 test("the tensor indicator updates without rebuilding open settings", async () => {
   const h = harness();
   await flush();

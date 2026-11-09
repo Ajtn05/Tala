@@ -37,7 +37,7 @@ type options struct {
 	input                                                                inputs
 	output, model, language, prompt, source, format, textMode, export    string
 	duration                                                             time.Duration
-	promptSet                                                            bool
+	promptSet, skipQuietSet, skipQuiet                                   bool
 }
 
 func parseOptions(args []string, stderr io.Writer) (options, error) {
@@ -62,6 +62,7 @@ func parseOptions(args []string, stderr io.Writer) (options, error) {
 	f.StringVar(&o.model, "model", "", "Existing Large v3 Turbo GGML model path")
 	f.StringVar(&o.language, "language", "", "auto, en, or tl (default: saved setting or auto)")
 	f.StringVar(&o.prompt, "prompt", "", "Vocabulary/context hint (not rewriting instructions; overrides saved hint)")
+	f.BoolVar(&o.skipQuiet, "skip-quiet-imports", false, "Skip nearly silent import windows (overrides the saved setting)")
 	f.BoolVar(&o.record, "record", false, "Record live audio until Ctrl+C or --duration expires")
 	f.StringVar(&o.source, "source", "microphone", "Recording source: microphone, system, or both (Linux: microphone)")
 	f.DurationVar(&o.duration, "duration", 0, "Recording duration, e.g. 30s or 5m (0: until Ctrl+C)")
@@ -83,6 +84,9 @@ func parseOptions(args []string, stderr io.Writer) (options, error) {
 		if v.Name == "prompt" {
 			o.promptSet = true
 		}
+		if v.Name == "skip-quiet-imports" {
+			o.skipQuietSet = true
+		}
 	})
 	o.input = append(o.input, f.Args()...)
 	var rangeErr error
@@ -92,6 +96,9 @@ func parseOptions(args []string, stderr io.Writer) (options, error) {
 	}
 	if (o.start != "" || o.end != "") && len(o.input) == 0 {
 		return o, errors.New("--start and --end require transcription inputs")
+	}
+	if o.skipQuietSet && len(o.input) == 0 {
+		return o, errors.New("--skip-quiet-imports requires transcription inputs")
 	}
 	if o.cookiesFile != "" && !o.cookieBrowserSet {
 		o.cookieBrowser = "other"
@@ -267,6 +274,9 @@ func execute(ctx context.Context, o options, manager models.Manager, stdout, std
 	}
 	if o.promptSet {
 		settings.Prompt = o.prompt
+	}
+	if o.skipQuietSet {
+		settings.SkipQuietImports = o.skipQuiet
 	}
 	c, err := app.NewHeadless(o.output, settings)
 	if err != nil {
