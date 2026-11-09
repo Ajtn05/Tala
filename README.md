@@ -10,8 +10,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Ajtn05/Tala/releases/latest">Download Tala</a> ·
-  <a href="docs/index.html">Product page</a> ·
+  <a href="https://github.com/Ajtn05/Tala/releases/latest"><img src="https://img.shields.io/badge/Download_Tala-244DD5?style=for-the-badge" alt="Download Tala"></a>
+  <a href="https://tala-one-kappa.vercel.app/"><img src="https://img.shields.io/badge/Product_Page-48349B?style=for-the-badge" alt="Product page"></a>
+</p>
+
+<p align="center">
   <a href="#get-started">Get started</a> ·
   <a href="#build-from-source">Build from source</a>
 </p>

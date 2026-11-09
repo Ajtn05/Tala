@@ -3,8 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Record, import, review, and export audio transcripts on your own machine with Tala.">
-  <title>Tala | Local audio transcription</title>
+  <meta name="description" content="Turn lectures, org meetings, and voice recordings into searchable transcripts with Tala. English, Filipino, and Taglish transcription runs on your own computer.">
+  <meta name="theme-color" content="#faf9f6">
+  <title>Tala | For every “ansabi ni sir?”</title>
   <link rel="icon" href="assets/tala-icon.png" type="image/png">
   <link rel="stylesheet" href="assets/product.css">
 </head>
@@ -12,130 +13,209 @@
   <header class="site-header">
     <div class="wrap header-inner">
       <a class="wordmark" href="#top">
-        <img src="assets/tala-icon.png" alt="" width="32" height="32"> Tala
+        <img src="assets/tala-icon.png" alt="" width="36" height="36"> Tala
       </a>
       <nav aria-label="Main navigation">
+        <a href="#use-cases">Campus life</a>
         <a href="#features">Features</a>
-        <a href="#use-cases">Use cases</a>
         <a href="#how-it-works">How it works</a>
-        <a href="#installation">Get started</a>
       </nav>
+      <a class="button primary header-download" href="#installation">Get Tala</a>
     </div>
   </header>
 
   <main id="top">
     <section class="wrap introduction" aria-labelledby="title">
-      <p class="platform">macOS app and Linux CLI</p>
-      <h1 id="title">Transcribe everything.<br>Right on your Mac.</h1>
-      <p>Record live audio or bring your own files and links. Tala transcribes English, Filipino, Taglish, and other Whisper languages on your machine.</p>
-      <div class="actions">
-        <a class="button primary" href="#installation">Get Tala</a>
-        <a class="button secondary" href="#features">Explore Tala</a>
+      <div class="intro-copy">
+        <p class="tag">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M4 10v4m4-7v10m4-14v18m4-14v10m4-7v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          Taglish welcome
+        </p>
+        <h1 id="title" lang="fil">Wait, ansabi <span>ni sir?</span></h1>
+        <p class="intro-description">Turn lectures, org meetings, and recordings into text you can search. From English to Filipino to the Taglish in between, Tala transcribes right on your computer.</p>
+        <div class="actions">
+          <a class="button primary" href="#installation">Get Tala</a>
+          <a class="button secondary" href="#use-cases">See campus examples</a>
+        </div>
+        <p class="platform">Free and open source <span aria-hidden="true">/</span> macOS app &amp; Linux CLI</p>
       </div>
-      <figure class="preview">
-        <a href="screenshots/home.png">
-          <img src="screenshots/home.png" width="2200" height="1600" alt="Tala dashboard with live recording, file and link imports, queue progress, and recent sessions" fetchpriority="high">
-        </a>
-        <figcaption>Tala’s macOS dashboard with sample sessions.</figcaption>
+
+      <figure class="class-preview">
+        <div class="chat">
+          <div class="chat-avatar" aria-hidden="true">GC</div>
+          <div>
+            <p class="chat-label">Class group chat</p>
+            <p class="chat-bubble" lang="fil">“Guys, kailan daw deadline?”</p>
+          </div>
+        </div>
+        <div class="wave-sticker" aria-hidden="true">
+          <svg viewBox="0 0 36 36" fill="none"><path d="M6 15v6m6-11v16m6-21v26m6-21v16m6-11v6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+        </div>
+        <div class="transcript">
+          <div class="transcript-header">
+            <img src="assets/tala-icon.png" alt="" width="29" height="29">
+            <p>Research Methods</p>
+            <span class="file-label">Transcript</span>
+          </div>
+          <p class="search-sample">
+            <svg aria-hidden="true" viewBox="0 0 20 20" fill="none"><circle cx="8.5" cy="8.5" r="4.75" stroke="currentColor" stroke-width="1.6"/><path d="m12 12 4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            deadline
+          </p>
+          <div class="transcript-line">
+            <time datetime="PT18S">00:18</time>
+            <p lang="fil">Yung <mark>deadline</mark> ng proposal, Friday at 5 PM.</p>
+          </div>
+          <div class="transcript-line">
+            <time datetime="PT26S">00:26</time>
+            <p>Upload one PDF per group, okay?</p>
+          </div>
+        </div>
+        <figcaption>Illustrative class chat and transcript</figcaption>
       </figure>
     </section>
 
-    <section class="wrap section" id="features" aria-labelledby="features-title">
-      <h2 id="features-title">Turn audio into text you can use</h2>
-      <div class="feature-list">
-        <article>
-          <h3>Record as you work</h3>
-          <p>Capture your microphone, system audio, or both on macOS. The Linux CLI supports microphone capture.</p>
-        </article>
-        <article>
-          <h3>Bring files and links</h3>
-          <p>Drop a file or paste a supported URL. Name the transcript, choose a time range, and follow download and transcription progress.</p>
-        </article>
-        <article>
-          <h3>Keep your language</h3>
-          <p>Automatic detection handles mixed-language speech. Use vocabulary hints for names and specialist terms.</p>
-        </article>
-        <article>
-          <h3>Read, correct, and share</h3>
-          <p>Search sessions, correct text while keeping the original, and export plain text, Markdown, or subtitles.</p>
-        </article>
-        <article>
-          <h3>Run Whisper locally</h3>
-          <p>After model setup, live recording and file transcription work offline. Use Metal on macOS or CPU inference on Linux.</p>
-        </article>
-        <article>
-          <h3>Make it comfortable</h3>
-          <p>Switch color schemes and text layouts, adjust the font size, or enable quick recording controls in the menu bar.</p>
-        </article>
+    <section class="campus-section" id="use-cases" aria-labelledby="uses-title">
+      <div class="wrap section">
+        <h2 id="uses-title">Straight from the class GC.</h2>
+        <p class="lede">Four campus moments where having a transcript comes in handy.</p>
+        <div class="campus-grid">
+          <article class="campus-card lecture-card">
+            <div class="card-context">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11v1a7 7 0 0 0 14 0v-1m-7 8v3m-3 0h6"/></svg>
+              In class
+            </div>
+            <h3 lang="fil">“Ansabi ni sir?”</h3>
+            <p>Record the lecture and search the transcript for the deadline, formula, or term you missed.</p>
+          </article>
+
+          <article class="campus-card reporting-card">
+            <div class="card-context">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>
+              After reporting
+            </div>
+            <h3>“Wait, I didn’t take that down.”</h3>
+            <p>Use timestamps to find your prof’s feedback. Copy the part your group needs for the next draft.</p>
+          </article>
+
+          <article class="campus-card org-card">
+            <div class="card-context">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5H5v16h14V5h-3"/><rect x="8" y="3" width="8" height="4" rx="1"/><path d="m8 12 1 1 2-2m2 1h3m-8 5 1 1 2-2m2 1h3"/></svg>
+              Org meeting
+            </div>
+            <h3>“Send me the minutes of the meeting.”</h3>
+            <p>Export the transcript as text or Markdown, then pull out decisions and action items for your minutes.</p>
+          </article>
+
+          <article class="campus-card replay-card">
+            <div class="card-context">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m10 9 5 3-5 3z"/></svg>
+              Lecture replay
+            </div>
+            <h3>“The recorded lecture is kinda long. Do you have notes?”</h3>
+            <p>Import the recording or a supported link. Transcribe all or part of the lecture and skim the text for your notes.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="wrap section features" id="features" aria-labelledby="features-title">
+      <div class="feature-overview">
+        <div>
+          <h2 id="features-title">From audio to something you can actually use.</h2>
+          <div class="feature-list">
+            <article>
+              <h3>Record or import</h3>
+              <p>Capture your mic, system audio, or both on macOS. Bring audio and video files or supported links. The Linux CLI can record from your mic.</p>
+            </article>
+            <article>
+              <h3>Find, fix, and share</h3>
+              <p>Search for a phrase, correct a name while keeping the original text, or export as text, Markdown, or subtitles. Use vocabulary hints for tricky names and terms.</p>
+            </article>
+            <article>
+              <h3>Transcribe on your own device</h3>
+              <p>Tala runs Whisper locally. Once the model is set up, you can record and transcribe local files offline.</p>
+            </article>
+          </div>
+        </div>
+        <figure class="product-shot">
+          <a href="screenshots/home.png">
+            <img src="screenshots/home.png" width="2200" height="1600" alt="Tala’s macOS dashboard with live recording, file and link imports, and recent sessions" loading="lazy">
+          </a>
+          <figcaption>Tala’s macOS dashboard with sample sessions.</figcaption>
+        </figure>
       </div>
       <div class="gallery">
-        <figure>
+        <figure class="product-shot">
           <a href="screenshots/transcript.png">
-            <img src="screenshots/transcript.png" width="2200" height="1800" alt="Transcript editor with timestamps, corrections, and export controls" loading="lazy">
+            <img src="screenshots/transcript.png" width="2200" height="1800" alt="Tala’s transcript editor with timestamps, corrections, and export controls" loading="lazy">
           </a>
-          <figcaption>Review a transcript and export the text.</figcaption>
+          <figcaption>Search and edit a transcript before exporting.</figcaption>
         </figure>
-        <figure>
+        <figure class="product-shot">
           <a href="screenshots/import.png">
-            <img src="screenshots/import.png" width="2200" height="1794" alt="Link import review with transcript name and start and end timestamps" loading="lazy">
+            <img src="screenshots/import.png" width="2200" height="1794" alt="Tala’s link import form with an editable transcript name and start and end timestamps" loading="lazy">
           </a>
           <figcaption>Name an import and transcribe just the section you need.</figcaption>
         </figure>
       </div>
     </section>
 
-    <section class="wrap section" id="use-cases" aria-labelledby="uses-title">
-      <h2 id="uses-title">From meetings to voice notes</h2>
-      <ul class="use-list">
-        <li><strong>Meetings and calls</strong><span>Find decisions and action items in a searchable transcript.</span></li>
-        <li><strong>Lectures and courses</strong><span>Review a section with timestamps tied to the original audio.</span></li>
-        <li><strong>Podcasts and interviews</strong><span>Edit the text and export subtitles for recorded media.</span></li>
-        <li><strong>Voice notes and journaling</strong><span>Record a thought and copy it out as continuous text.</span></li>
-      </ul>
+    <section class="wrap section workflow" id="how-it-works" aria-labelledby="flow-title">
+      <h2 id="flow-title">Record, review, export.</h2>
+      <ol class="steps">
+        <li>
+          <h3>Bring the audio</h3>
+          <p>Open <strong>New transcription</strong> to record, drop in a file, or paste a supported link.</p>
+        </li>
+        <li>
+          <h3>Find the good bits</h3>
+          <p>Open the session to search for a phrase, check a timestamp, or correct the text.</p>
+        </li>
+        <li>
+          <h3>Take the text with you</h3>
+          <p>Copy the text or export TXT, Markdown, SRT, or VTT. The CLI also exports JSON.</p>
+        </li>
+      </ol>
     </section>
 
-    <section class="wrap section" id="how-it-works" aria-labelledby="flow-title">
-      <h2 id="flow-title">Record, review, export</h2>
-      <div class="workflow">
-        <ol>
-          <li>Open <strong>New transcription</strong> and choose a recording source or import media.</li>
-          <li>Open the saved session to find a phrase, correct a segment, or read by source.</li>
-          <li>Copy the text or export TXT, Markdown, SRT, or VTT. The CLI also exports JSON.</li>
-        </ol>
-        <figure class="transcript-example">
-          <figcaption>Sample transcript</figcaption>
-          <p><span>System Audio <time datetime="PT8S">00:08</time></span>Can we review the slides on Friday?</p>
-          <p><span>Microphone <time datetime="PT12S">00:12</time></span>Yes. I’ll share the draft first.</p>
-        </figure>
+    <section class="wrap installation" id="installation" aria-labelledby="install-title">
+      <div class="download-panel">
+        <div>
+          <h2 id="install-title">Get Tala</h2>
+          <p>Free to download for Apple silicon Macs and Linux x86-64.</p>
+        </div>
+        <a class="button primary" href="https://github.com/Ajtn05/Tala/releases/latest">Download Tala</a>
       </div>
-    </section>
-
-    <section class="wrap section" id="installation" aria-labelledby="install-title">
-      <h2 id="install-title">Get Tala</h2>
-      <p class="lede"><a href="https://github.com/Ajtn05/Tala/releases/latest">Download the macOS app or Linux CLI</a>. To build from source, use Go 1.25 or later, CMake, pkg-config, and a native compiler toolchain.</p>
-      <div class="setup-grid">
-        <article>
-          <h3>macOS 14.2 or later</h3>
-          <pre><code>make setup
+      <details class="setup">
+        <summary>Setup and build instructions</summary>
+        <p class="lede">Building from source requires Go 1.25 or later, CMake, pkg-config, and a native compiler toolchain.</p>
+        <div class="setup-grid">
+          <article>
+            <h3>macOS 14.2 or later</h3>
+            <pre><code>make setup
 make bundle
 open dist/Tala.app</code></pre>
-          <p>In Settings, choose a verified Whisper Large v3 Turbo model or download it. Grant audio and Documents access when prompted.</p>
-        </article>
-        <article>
-          <h3>Linux CLI</h3>
-          <pre><code>make setup
+            <p>In Settings, choose a verified Whisper Large v3 Turbo model or download it. Grant audio and Documents access when prompted.</p>
+          </article>
+          <article>
+            <h3>Linux CLI</h3>
+            <pre><code>make setup
 make build
 ./tala --ensure-model</code></pre>
-          <p>On Debian or Ubuntu, install <code>libasound2-dev</code> before building. Run <code>./tala --help</code> for recording and import options.</p>
-        </article>
-      </div>
-      <p class="lede">File imports use FFmpeg and ffprobe. URL imports also use yt-dlp. The model download is approximately 1.6 GB.</p>
+            <p>On Debian or Ubuntu, install <code>libasound2-dev</code> before building. Run <code>./tala --help</code> for recording and import options.</p>
+          </article>
+        </div>
+        <p>File imports use FFmpeg and ffprobe. URL imports also use yt-dlp. The model download is approximately 1.6 GB.</p>
+      </details>
     </section>
   </main>
 
   <footer class="wrap site-footer">
     <span>Tala is open source under the MIT license.</span>
-    <a href="https://github.com/ggml-org/whisper.cpp">Powered by whisper.cpp</a>
+    <div>
+      <a href="https://github.com/Ajtn05/Tala">GitHub</a>
+      <a href="https://github.com/ggml-org/whisper.cpp">Powered by whisper.cpp</a>
+    </div>
   </footer>
 </body>
 </html>
