@@ -49,7 +49,7 @@ const state = {
   model: { state: "checking" },
   modelCatalog: [],
   modelInventory: {},
-  settings: { language: "auto" },
+  settings: { language: "taglish" },
   dependencies: {},
 };
 let view = "new",
@@ -195,6 +195,7 @@ window.receive = function (event) {
   if (event.type === "modelInventory") {
     const before = state.modelInventory;
     state.modelInventory = d;
+    updateLiveReviewControls();
     if (d.download?.id && d.download.id === before.download?.id) {
       updateModelTransfer();
     } else {
@@ -232,6 +233,7 @@ window.receive = function (event) {
       openSession(d.sessionId);
     } else if (view === "new") renderHomeRecording();
     if (view === "session") updateRecordingBanner();
+    updateLiveReviewControls();
     return;
   }
   if (event.type === "jobs") {
@@ -259,9 +261,19 @@ window.receive = function (event) {
   }
   if (event.type === "correction") {
     if (selected?.id === d.ID) {
+      delete selected.suggestions[d.Segment];
       if (d.Text === null) delete selected.corrections[d.Segment];
       else selected.corrections[d.Segment] = d.Text;
       replaceSegment(d.Segment);
+    }
+    return;
+  }
+  if (event.type === "reviewSuggestion") {
+    if (selected?.id === d.sessionId) {
+      if (d.text === null || d.accepted) delete selected.suggestions[d.segmentId];
+      else selected.suggestions[d.segmentId] = d.text;
+      if (d.accepted) selected.corrections[d.segmentId] = d.text;
+      if (!$(`.segment[data-id="${d.segmentId}"] textarea`)) replaceSegment(d.segmentId);
     }
     return;
   }
@@ -1099,6 +1111,7 @@ async function openSession(id) {
     selected = session;
     selected.segments ??= [];
     selected.corrections ??= {};
+    selected.suggestions ??= {};
     view = "session";
     storage.setItem("selectedSession", id);
     syncNavigation();
@@ -1113,7 +1126,7 @@ function updateRecordingBanner() {
   if (!target) return;
   const active = state.live.active && selected?.id === state.live.sessionId;
   target.innerHTML = active
-    ? `<div class="live-notice"><span><span class="dot"></span><strong id="live-clock">${clock((Date.now() - new Date(state.live.started)) / 1000)}</strong> &nbsp; ${escape({ loading: "Loading model", recording: "Recording", stopping: "Finishing transcript" }[state.live.state] || state.live.state)}</span><button id="stop-recording" ${state.live.state === "stopping" ? "disabled" : ""}>Stop recording</button></div>`
+    ? `<div class="live-notice"><span><span class="dot"></span><strong id="live-clock">${clock((Date.now() - new Date(state.live.started)) / 1000)}</strong> &nbsp; ${escape({ loading: "Loading model", recording: "Recording", stopping: "Finishing transcript" }[state.live.state] || state.live.state)}${state.live.review ? `<small class="live-review-status" role="status">${escape(state.live.review)}</small>` : ""}</span><button id="stop-recording" ${state.live.state === "stopping" ? "disabled" : ""}>Stop recording</button></div>`
     : "";
   if ($("#stop-recording")) $("#stop-recording").onclick = () => action("stop");
   syncSessionTools();
@@ -1211,11 +1224,28 @@ function segmentNode(seg) {
   node.dataset.id = seg.id;
   node.dataset.start = seg.start;
   const corrected = Object.hasOwn(selected.corrections, seg.id);
+  const suggestion = !corrected && selected.suggestions[seg.id];
   node.classList.toggle("corrected", corrected);
   node.innerHTML = `<div class="segment-meta"><span class="source"></span>${seg.untimed ? "" : `<button class="timestamp" title="Seek media to this timestamp">${clock(seg.start)}</button>`}</div><p class="segment-text"></p><div class="segment-tools"><button class="edit-segment">Edit</button>${corrected ? '<button class="restore-segment">Restore original</button>' : ""}<span class="edited">Edited</span></div>`;
   node.querySelector(".source").textContent = seg.source;
   const text = corrected ? selected.corrections[seg.id] : seg.text;
   node.querySelector(".segment-text").textContent = text + " ";
+  if (suggestion) {
+    const review = document.createElement("div");
+    review.className = "segment-suggestion";
+    review.innerHTML = '<strong>Review suggestion</strong><span class="suggestion-text"></span><button class="accept-suggestion">Accept</button><button class="dismiss-suggestion">Dismiss</button>';
+    review.querySelector(".suggestion-text").textContent = suggestion;
+    const id = selected.id;
+    const buttons = review.querySelectorAll("button");
+    buttons.forEach((button) => {
+      button.onclick = async () => {
+        buttons.forEach((control) => (control.disabled = true));
+        await action("resolveReviewSuggestion", { id, segment: seg.id, accept: button.classList.contains("accept-suggestion") });
+        buttons.forEach((control) => (control.disabled = false));
+      };
+    });
+    node.append(review);
+  }
   node.tabIndex = 0;
   const seek = node.querySelector(".timestamp");
   if (seek) {
@@ -1334,6 +1364,57 @@ function readSettings() {
     menuBarIcon: $("#menu-bar-icon").checked,
   };
 }
+function liveReviewSettings() {
+  const selectedModel = state.settings.liveReviewModel || "large-v3-turbo-q5";
+  const options = state.cleanupModel ? [state.cleanupModel, ...state.modelCatalog] : state.modelCatalog;
+  return `<section class="settings-group" aria-labelledby="live-review-heading">
+    <h2 id="live-review-heading">Live transcript review</h2>
+    <label><input id="live-review-enabled" type="checkbox" ${state.settings.liveReview ? "checked" : ""}> Suggest corrections while recording</label>
+    <p>Choose Qwen for contextual cleanup of whole lines, or choose Whisper to check uncertain words against the audio. Both run on your device. You decide which suggestions to accept.</p>
+    <label class="field"><span>Review model</span><select id="live-review-model">
+      ${options.map((model) => `<option value="${escape(model.id)}" ${model.id === selectedModel ? "selected" : ""}>${escape(model.name)} · ${model === state.cleanupModel ? "text cleanup" : "audio review"}</option>`).join("")}
+    </select></label>
+    <p id="live-review-download-status" role="status"></p>
+    <div class="controls"><button id="download-live-review">Download model</button><button id="remove-live-review" hidden>Remove model</button><button id="save-live-review">Save live review</button></div>
+  </section>`;
+}
+function updateLiveReviewControls() {
+  if (view !== "settings") return;
+  const select = $("#live-review-model");
+  if (!select) return;
+  const cleanup = state.cleanupModel?.id === select.value;
+  const model = cleanup ? state.cleanupModel : state.modelCatalog.find((entry) => entry.id === select.value);
+  const status = modelStatus(select.value), installed = !!status.path;
+  const transfer = state.modelInventory.download;
+  const download = $("#download-live-review");
+  download.hidden = installed;
+  download.disabled = !model || state.modelInventory.busy || state.live.active;
+  const remove = $("#remove-live-review");
+  remove.hidden = !cleanup || !status.managed;
+  remove.disabled = state.modelInventory.busy || state.live.active;
+  $("#save-live-review").disabled = !model || state.live.active ||
+    ($("#live-review-enabled").checked && !installed);
+  $("#live-review-download-status").textContent = !model ? "" : installed ? "Ready for offline review" :
+    transfer?.id === model.id ? `${formatBytes(transfer.bytes)} of ${formatBytes(model.bytes)} downloaded` :
+    `Free download · ${formatBytes(model.bytes)}`;
+}
+async function saveLiveReview() {
+  const button = $("#save-live-review");
+  const enabled = $("#live-review-enabled").checked;
+  const modelId = $("#live-review-model").value;
+  button.disabled = true;
+  try {
+    await rpc("liveReview", { enabled, modelId });
+    state.settings.liveReview = enabled;
+    state.settings.liveReviewModel = modelId;
+    if (view === "settings") renderSettings();
+    toast("Live review settings saved");
+  } catch (e) {
+    error(e);
+  } finally {
+    updateLiveReviewControls();
+  }
+}
 function appearanceSettings() {
   const selected = storage.getItem("colorScheme") || "slate";
   return `<section class="settings-group appearance-settings"><div class="settings-section-head"><div><h2>Appearance</h2><p>Make a little room for your own style.</p></div><label class="filter-control">Appearance<select id="appearance"><option value="system">Follow system</option><option value="light">Light</option><option value="dark">Dark</option></select></label></div>
@@ -1359,13 +1440,12 @@ function renderModelLibrary() {
   if (!library) return;
   const inventory = state.modelInventory, installed = installedModels();
   const disabled = inventory.busy ? "disabled" : "";
-  const chosenDefault = state.settings.defaultModel || "large-v3-turbo";
+  const chosenDefault = state.settings.defaultModel || "large-v3-turbo-q5";
   library.innerHTML = `<ul class="model-library">${state.modelCatalog.map((m) => {
     const status = modelStatus(m.id), activeDownload = inventory.download?.id === m.id;
     const note = status.path ? (status.managed ? "Installed" : "Available from disk") : formatBytes(m.bytes);
     return `<li class="model-entry">
-      <div><strong>${escape(m.use)}</strong>${m.id === chosenDefault && status.path ? '<span class="model-tag">Default</span>' :
-        m.id === "large-v3-turbo-q5" && !installed.length ? '<span class="model-tag">Recommended</span>' : ""}
+      <div><strong>${escape(m.use)}</strong>${m.id === chosenDefault ? '<span class="model-tag">Default</span>' : ""}
         <small>${escape(m.name)} · ${escape(note)}</small>
         <p>${escape(m.description)}</p>
         ${activeDownload ? '<progress id="model-download-progress" aria-label="Model download progress"></progress><small id="model-download-status" role="status"></small>' : ""}
@@ -1373,7 +1453,7 @@ function renderModelLibrary() {
       </div>
       ${status.path
         ? (status.managed ? `<button data-model-remove="${escape(m.id)}" aria-label="Remove ${escape(m.name)}" ${disabled}>Remove</button>` : "")
-        : `<button data-model-download="${escape(m.id)}" aria-label="Download ${escape(m.name)}" class="${m.id === "large-v3-turbo-q5" && !installed.length ? "primary" : ""}" ${disabled}>${activeDownload ? "Downloading…" : "Download"}</button>`}
+        : `<button data-model-download="${escape(m.id)}" aria-label="Download ${escape(m.name)}" class="${m.id === chosenDefault ? "primary" : ""}" ${disabled}>${activeDownload ? "Downloading…" : "Download"}</button>`}
     </li>`;
   }).join("")}</ul>
   <div class="model-preferences">
@@ -1450,14 +1530,28 @@ function renderSettings() {
         <div class="controls"><button id="choose-model">Choose model file…</button><button id="verify-model">Save and verify model</button></div>
       </details>
     </section>
-    ${appearanceSettings()}<div class="settings-group"><h2>Recognition</h2><label class="field"><span>Language</span><select id="language"><option value="auto">Automatic (English, Filipino, Taglish, other languages)</option><option value="en">English</option><option value="tl">Filipino / Tagalog</option></select></label><label class="field"><span>Vocabulary hints (optional)</span><textarea id="context-prompt" aria-describedby="vocabulary-help" placeholder="e.g. Tala, Ateneo de Manila, Kubernetes, barangay"></textarea></label><p id="vocabulary-help">Help Whisper recognize unusual names, acronyms, and technical terms by listing words you expect to hear, or adding a short description of the recording. For example: “A Taglish lecture about Kubernetes at Ateneo de Manila.” This is a recognition hint, not a replacement list or an instruction to rewrite text. It may improve spelling but does not guarantee it. Leave blank for general recordings. Applies to new audio in live, file, and URL transcriptions.</p><p>Use Automatic for mixed languages. Translation is disabled.</p><label><input id="skip-quiet-imports" type="checkbox" aria-describedby="skip-quiet-help" ${s.skipQuietImports ? "checked" : ""}> Skip nearly silent import windows</label><p id="skip-quiet-help">Speeds up file and URL imports with long pauses by skipping windows that stay nearly silent throughout. Source timestamps are preserved. Leave off for very faint recordings.</p><button id="save-settings" class="primary">Save settings</button></div><div class="settings-group"><h2>Application</h2><label><input id="menu-bar-icon" type="checkbox" ${s.menuBarIcon ? "checked" : ""}> Show Tala in the menu bar</label><p>Off by default. Enable quick recording controls in the menu bar. You can always reopen Tala from the Dock.</p></div><div class="settings-group"><h2>Media tools</h2><p>Tala uses FFmpeg for media files and yt-dlp for supported links.</p><div id="dependency-checks" aria-live="polite"></div>${signInHelper()}</div><div class="settings-group"><h2>Storage</h2><p>${escape(state.output || "~/Documents/Tala/")}<br>Temporary audio is deleted after processing.</p><button id="open-storage">Open transcript folder</button></div>`,
+    ${appearanceSettings()}<div class="settings-group"><h2>Recognition</h2><label class="field"><span>Language</span><select id="language"><option value="taglish">Taglish (English and Tagalog)</option><option value="auto">Automatic (all supported languages)</option><option value="en">English</option><option value="tl">Filipino / Tagalog</option></select></label><label class="field"><span>Vocabulary hints (optional)</span><textarea id="context-prompt" aria-describedby="vocabulary-help" placeholder="e.g. Tala, Ateneo de Manila, Kubernetes, barangay"></textarea></label><p id="vocabulary-help">Help Whisper recognize unusual names, acronyms, and technical terms by listing words you expect to hear, or adding a short description of the recording. For example: “A Taglish lecture about Kubernetes at Ateneo de Manila.” This is a recognition hint, not a replacement list or an instruction to rewrite text. It may improve spelling but does not guarantee it. Leave blank for general recordings. Applies to new audio in live, file, and URL transcriptions.</p><p>Taglish skips chunks that Whisper detects as languages other than English or Tagalog. Choose Automatic to include other languages. Translation is disabled.</p><label><input id="skip-quiet-imports" type="checkbox" aria-describedby="skip-quiet-help" ${s.skipQuietImports ? "checked" : ""}> Skip nearly silent import windows</label><p id="skip-quiet-help">Speeds up file and URL imports with long pauses by skipping windows that stay nearly silent throughout. Source timestamps are preserved. Leave off for very faint recordings.</p><button id="save-settings" class="primary">Save settings</button></div>${liveReviewSettings()}<div class="settings-group"><h2>Application</h2><label><input id="menu-bar-icon" type="checkbox" ${s.menuBarIcon ? "checked" : ""}> Show Tala in the menu bar</label><p>Off by default. Enable quick recording controls in the menu bar. You can always reopen Tala from the Dock.</p></div><div class="settings-group"><h2>Media tools</h2><p>Tala uses FFmpeg for media files and yt-dlp for supported links.</p><div id="dependency-checks" aria-live="polite"></div>${signInHelper()}</div><div class="settings-group"><h2>Storage</h2><p>${escape(state.output || "~/Documents/Tala/")}<br>Temporary audio is deleted after processing.</p><button id="open-storage">Open transcript folder</button></div>`,
   );
   renderModelLibrary();
+  $("#save-live-review").onclick = saveLiveReview;
+  $("#live-review-model").value = s.liveReviewModel || "large-v3-turbo-q5";
+  $("#live-review-model").onchange = updateLiveReviewControls;
+  $("#live-review-enabled").onchange = updateLiveReviewControls;
+  $("#download-live-review").onclick = async () => {
+    await changeInstalledModel($("#download-live-review"), "downloadModel", $("#live-review-model").value);
+    updateLiveReviewControls();
+  };
+  $("#remove-live-review").onclick = async () => {
+    if (!window.confirm("Remove the downloaded Qwen cleanup model?")) return;
+    await changeInstalledModel($("#remove-live-review"), "removeModel", state.cleanupModel.id);
+    updateLiveReviewControls();
+  };
+  updateLiveReviewControls();
   bindAppearanceSettings();
   bindSignInHelper();
   renderDependencyChecks();
   refreshDependencies();
-  $("#language").value = s.language || "auto";
+  $("#language").value = s.language || "taglish";
   $("#context-prompt").value = s.prompt || "";
   $("#menu-bar-icon").onchange = async (event) => {
     const enabled = event.target.checked;

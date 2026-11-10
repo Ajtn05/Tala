@@ -68,6 +68,7 @@ type Live struct {
 	SessionID string     `json:"sessionId"`
 	Started   time.Time  `json:"started"`
 	Error     string     `json:"error,omitempty"`
+	Review    string     `json:"review,omitempty"`
 }
 type Controller struct {
 	mu            sync.Mutex
@@ -96,6 +97,7 @@ type Controller struct {
 	modelStates   map[string]models.Status
 	modelDownload modelTransfer
 	settingsMu    sync.Mutex
+	editsMu       sync.Mutex
 	recognition   *models.Settings
 	headless      bool
 	ownedJobs     map[string]bool
@@ -193,11 +195,15 @@ func (c *Controller) Snapshot() any {
 	if e != nil {
 		c.Emit("error", e.Error())
 	}
-	return map[string]any{
+	snapshot := map[string]any{
 		"live": live, "model": model, "modelCatalog": models.Catalog(), "modelInventory": modelState, "jobs": jobs, "sessions": items,
 		"settings": c.Models.Settings(), "dependencies": media.Dependencies(), "output": c.Store.Dir,
 		"tensorAcceleration": tensorAcceleration,
 	}
+	if !c.headless && cleanupExecutable(c.Models.Exe) != "" {
+		snapshot["cleanupModel"] = models.CleanupModel()
+	}
+	return snapshot
 }
 
 // The caller holds engineMu for model switching and decoding.
@@ -254,12 +260,15 @@ func (c *Controller) closeEngine() {
 	}
 }
 
-func (c *Controller) decode(ctx context.Context, model models.Status, samples []float32) ([]transcriber.Segment, error) {
+func (c *Controller) decode(ctx context.Context, model models.Status, samples []float32, scores bool) ([]transcriber.Segment, error) {
 	if err := c.ensureEngine(ctx, model, true); err != nil {
 		return nil, err
 	}
 	s := c.recognitionSettings()
 	c.engine.SetOptions(s.Language, s.Prompt)
+	if scores {
+		return c.engine.TranscribeWithScores(ctx, samples)
+	}
 	return c.engine.Transcribe(ctx, samples)
 }
 func (c *Controller) recognitionSettings() models.Settings {
@@ -310,12 +319,12 @@ func (c *Controller) StartWithModel(id string) error {
 	go c.runLive(ctx, v.ID, c.live.Mode, model, c.liveDone)
 	return nil
 }
-func (c *Controller) append(id string, seg transcriber.Segment) error {
+func (c *Controller) append(id string, seg transcriber.Segment) (session.Segment, error) {
 	v, e := c.Store.Append(id, session.Segment{Text: seg.Text, Start: seg.Start.Seconds(), End: seg.End.Seconds(), Source: seg.Source})
 	if e == nil {
 		c.Emit("segment", v)
 	}
-	return e
+	return v, e
 }
 func (c *Controller) runLive(ctx context.Context, id string, mode audio.Mode, model models.Status, done chan struct{}) {
 	var duration time.Duration
@@ -330,16 +339,22 @@ func (c *Controller) runLive(ctx context.Context, id string, mode audio.Mode, mo
 		c.live.State = "recording"
 		c.emitLocked("live", c.live)
 		c.mu.Unlock()
+		review := c.startLiveReview(ctx, id, model)
 		input := func(capture context.Context, emit func(audio.Frame) error) error {
 			return audio.Capture(capture, mode, emit)
 		}
 		duration, err = recording.Run(ctx, input, func(decodeCtx context.Context, samples []float32) ([]transcriber.Segment, error) {
 			c.engineMu.Lock()
 			defer c.engineMu.Unlock()
-			return c.decode(decodeCtx, model, samples)
-		}, func(seg transcriber.Segment) error {
-			return c.append(id, seg)
+			return c.decode(decodeCtx, model, samples, review != nil && !review.textOnly)
+		}, func(seg transcriber.Segment, clip []float32) error {
+			part, err := c.append(id, seg)
+			if err == nil {
+				review.offer(part.ID, seg, clip)
+			}
+			return err
 		})
+		review.close()
 	}
 	if err == nil {
 		err = c.saveRecordingText(id)
@@ -356,6 +371,7 @@ func (c *Controller) runLive(ctx context.Context, id string, mode audio.Mode, mo
 	c.mu.Lock()
 	c.live.Active = false
 	c.live.State = status
+	c.live.Review = ""
 	c.liveCancel = nil
 	if err != nil {
 		c.live.Error = err.Error()
@@ -819,7 +835,7 @@ func (c *Controller) process(ctx context.Context, job Job) error {
 			if e := c.lockBatchEngine(ctx, job.ID); e != nil {
 				return e
 			}
-			segs, e = c.decode(ctx, model, samples)
+			segs, e = c.decode(ctx, model, samples, false)
 			c.engineMu.Unlock()
 			if e != nil {
 				return e
@@ -833,7 +849,7 @@ func (c *Controller) process(ctx context.Context, job Job) error {
 			seg.Start = time.Duration(startSec * float64(time.Second))
 			seg.End = time.Duration(endSec * float64(time.Second))
 			if strings.TrimSpace(seg.Text) != "" {
-				if e = c.append(v.ID, seg); e != nil {
+				if _, e = c.append(v.ID, seg); e != nil {
 					return e
 				}
 			}

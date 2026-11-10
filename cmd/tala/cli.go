@@ -61,7 +61,7 @@ func parseOptions(args []string, stderr io.Writer) (options, error) {
 	f.StringVar(&o.output, "output", "", "Directory for saved sessions (TALA_OUTPUT_DIR overrides the platform default)")
 	f.StringVar(&o.model, "model", "", "Existing supported Whisper GGML model path")
 	f.StringVar(&o.modelID, "model-id", "", "Installed or downloadable model: large-v3-turbo, large-v3-turbo-q5, large-v3, small-q5")
-	f.StringVar(&o.language, "language", "", "auto, en, or tl (default: saved setting or auto)")
+	f.StringVar(&o.language, "language", "", "taglish, auto, en, or tl (uses the saved setting when set, otherwise taglish)")
 	f.StringVar(&o.prompt, "prompt", "", "Vocabulary/context hint (not rewriting instructions; overrides saved hint)")
 	f.BoolVar(&o.skipQuiet, "skip-quiet-imports", false, "Skip nearly silent import windows (overrides the saved setting)")
 	f.BoolVar(&o.record, "record", false, "Record live audio until Ctrl+C or --duration expires")
@@ -131,8 +131,8 @@ func parseOptions(args []string, stderr io.Writer) (options, error) {
 	if o.duration > 0 && !o.record {
 		return o, errors.New("--duration requires --record")
 	}
-	if o.language != "" && o.language != "auto" && o.language != "en" && o.language != "tl" {
-		return o, errors.New("--language must be auto, en, or tl")
+	if o.language != "" && !models.ValidLanguage(o.language) {
+		return o, errors.New("--language must be taglish, auto, en, or tl")
 	}
 	if o.source != "microphone" && o.source != "system" && o.source != "both" {
 		return o, errors.New("--source must be microphone, system, or both")

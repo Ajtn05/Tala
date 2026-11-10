@@ -47,7 +47,7 @@ func TestWhisperRecordingRoundTrip(t *testing.T) {
 		<-ctx.Done()
 		return nil
 	}
-	duration, err := Run(ctx, input, decoder.Transcribe, func(part transcriber.Segment) error {
+	duration, err := Run(ctx, input, decoder.Transcribe, func(part transcriber.Segment, _ []float32) error {
 		_, err := store.Append(entry.ID, session.Segment{Source: part.Source, Text: part.Text, Start: part.Start.Seconds(), End: part.End.Seconds()})
 		return err
 	})

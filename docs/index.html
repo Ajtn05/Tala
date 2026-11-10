@@ -117,11 +117,11 @@
             </article>
             <article>
               <h3>Find, fix, and share</h3>
-              <p>Search for a phrase, correct a name while keeping the original text, or export as text, Markdown, or subtitles. Use vocabulary hints for tricky names and terms.</p>
+              <p>Search for a phrase, edit the text, or export as text, Markdown, or subtitles. On macOS, you can turn on live review and accept or dismiss suggestions as you record.</p>
             </article>
             <article>
-              <h3>Transcribe on your own device</h3>
-              <p>Tala runs Whisper locally. Once the model is set up, you can record and transcribe local files offline.</p>
+              <h3>Transcribe Taglish offline</h3>
+              <p>Tala’s default Taglish mode keeps English and Tagalog speech and skips chunks detected as other languages. Once you download a Whisper model, you can record and transcribe local files offline.</p>
             </article>
           </div>
         </div>
@@ -170,8 +170,8 @@
       <div class="download-panel">
         <div class="download-copy">
           <h2 id="install-title">Get Tala</h2>
-          <p>Tala 1.2.0 is available for Apple silicon Macs and Linux x86-64. It includes the tools for file and link imports.</p>
-          <p><a href="https://github.com/Ajtn05/Tala/releases/tag/v1.2.0">See what’s new in Tala 1.2.0</a></p>
+          <p>Tala 1.3.0 is available for Apple silicon Macs and Linux x86-64. This release adds Taglish mode, a smaller default model, and optional live review on macOS.</p>
+          <p><a href="https://github.com/Ajtn05/Tala/releases/tag/v1.3.0">See what’s new in Tala 1.3.0</a></p>
         </div>
         <div class="download-actions">
           <a class="button primary" href="https://github.com/Ajtn05/Tala/releases/latest/download/Tala.dmg">Download for macOS</a>
@@ -184,7 +184,7 @@
           <ol class="setup-steps">
             <li><strong>Install Tala.</strong> On macOS 14.2 or later, open the disk image, drag Tala into Applications, and open it from there.</li>
             <li><strong>Approve Tala if macOS blocks it.</strong> After trying to open Tala, go to <strong>System Settings → Privacy &amp; Security</strong>, scroll to <strong>Security</strong>, and choose <strong>Open Anyway</strong>. Confirm when prompted. <a href="https://support.apple.com/en-ph/102445">See Apple’s instructions</a>.</li>
-            <li><strong>Set up transcription.</strong> In Tala’s <strong>Settings</strong>, select <strong>Download model (1.6 GB)</strong> or choose an existing Whisper Large v3 Turbo model.</li>
+            <li><strong>Set up transcription.</strong> In <strong>Settings → Transcription models</strong>, download <strong>Everyday &amp; Live</strong> (about 574 MB) or choose an existing supported model.</li>
             <li><strong>Start a recording.</strong> Open <strong>New transcription</strong> and choose an audio source. Allow audio and Documents access when macOS asks.</li>
           </ol>
         </article>
@@ -195,7 +195,7 @@
       </div>
       <details class="setup">
         <summary>Set up the Linux command-line app</summary>
-        <p class="lede">Extract the archive, open a terminal in the extracted folder, and run this command to download the 1.6 GB transcription model.</p>
+        <p class="lede">Extract the archive, open a terminal in the extracted folder, and run this command to download the default Whisper model (about 574 MB).</p>
         <pre><code>./tala --ensure-model</code></pre>
         <p>Run <code>./tala --help</code> for recording and import options. Keep the extracted <code>tala-tools</code> folder next to the executable.</p>
       </details>

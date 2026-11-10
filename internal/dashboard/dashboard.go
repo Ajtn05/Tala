@@ -225,6 +225,24 @@ func (h *Host) dispatch(r request) (any, error) {
 		var id string
 		_ = decode(r.Data, &id)
 		return c.Store.Get(id)
+	case "liveReview":
+		var d struct {
+			Enabled bool
+			ModelID string
+		}
+		if err := decode(r.Data, &d); err != nil {
+			return nil, err
+		}
+		return nil, c.ConfigureLiveReview(d.Enabled, d.ModelID)
+	case "resolveReviewSuggestion":
+		var d struct {
+			ID, Segment string
+			Accept      bool
+		}
+		if err := decode(r.Data, &d); err != nil {
+			return nil, err
+		}
+		return nil, c.ResolveReviewSuggestion(d.ID, d.Segment, d.Accept)
 	case "rename":
 		var d struct{ ID, Title string }
 		_ = decode(r.Data, &d)
@@ -245,12 +263,10 @@ func (h *Host) dispatch(r request) (any, error) {
 			ID, Segment string
 			Text        *string
 		}
-		_ = decode(r.Data, &d)
-		e := c.Store.Correct(d.ID, d.Segment, d.Text)
-		if e == nil {
-			c.Emit("correction", d)
+		if err := decode(r.Data, &d); err != nil {
+			return nil, err
 		}
-		return nil, e
+		return nil, c.CorrectSegment(d.ID, d.Segment, d.Text)
 	case "enqueue":
 		var d struct {
 			Sources []string

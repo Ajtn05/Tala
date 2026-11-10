@@ -21,9 +21,13 @@ import (
 
 const Name = "ggml-large-v3-turbo.bin"
 const SHA256 = "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69"
-const DefaultID = "large-v3-turbo"
 const RecommendedID = "large-v3-turbo-q5"
+const DefaultID = RecommendedID
+const FullTurboID = "large-v3-turbo"
+const DefaultLanguage = "taglish"
 const modelURL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/"
+const CleanupID = "qwen3.5-4b"
+const cleanupURL = "https://huggingface.co/gguf/Qwen3.5-4B-GGUF/resolve/76e05555d64c8d045dd4b9c9f1ebaef1e35d99f7/"
 
 type Model struct {
 	ID          string `json:"id"`
@@ -37,12 +41,24 @@ type Model struct {
 
 var catalog = []Model{
 	{RecommendedID, "Whisper Large v3 Turbo Q5", "Everyday & live", "A smaller download for live recordings and everyday transcription.", 574041195, "ggml-large-v3-turbo-q5_0.bin", "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2"},
-	{DefaultID, "Whisper Large v3 Turbo", "Full Turbo", "The original Turbo model for multilingual recording and imports.", 1624555275, Name, SHA256},
+	{FullTurboID, "Whisper Large v3 Turbo", "Full Turbo", "The original Turbo model for multilingual recording and imports.", 1624555275, Name, SHA256},
 	{"large-v3", "Whisper Large v3", "Higher accuracy", "For difficult recordings, including Filipino and Taglish. Takes longer to process.", 3095033483, "ggml-large-v3.bin", "64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2"},
 	{"small-q5", "Whisper Small Q5", "Low memory", "For machines with limited memory. Difficult speech may need more corrections.", 190085487, "ggml-small-q5_1.bin", "ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb"},
 }
 
 func Catalog() []Model { return append([]Model(nil), catalog...) }
+
+func CleanupModel() Model {
+	return Model{CleanupID, "Qwen3.5 4B Q4", "Contextual cleanup", "Propose transcript corrections using recent dialogue.",
+		2783446368, "qwen3.5-4b-Q4_K_M.gguf", "c3c2cf023efdbd913c2363a14d5c7266db5e05c4602f1c0790eaed567d8aff23"}
+}
+
+func LookupReview(id string) (Model, bool) {
+	if id == CleanupID {
+		return CleanupModel(), true
+	}
+	return Lookup(id)
+}
 
 func Lookup(id string) (Model, bool) {
 	for _, model := range catalog {
@@ -60,6 +76,15 @@ func (s Settings) DefaultID() string {
 	return DefaultID
 }
 
+func ValidLanguage(language string) bool {
+	switch language {
+	case DefaultLanguage, "auto", "en", "tl":
+		return true
+	default:
+		return false
+	}
+}
+
 type Settings struct {
 	DefaultModel     string        `json:"defaultModel,omitempty"`
 	AskModel         bool          `json:"askModel,omitempty"`
@@ -68,9 +93,19 @@ type Settings struct {
 	Language         string        `json:"language"`
 	Prompt           string        `json:"prompt"`
 	SkipQuietImports bool          `json:"skipQuietImports,omitempty"`
+	LiveReview       bool          `json:"liveReview,omitempty"`
+	LiveReviewModel  string        `json:"liveReviewModel,omitempty"`
 	MenuBarIcon      bool          `json:"menuBarIcon"`
 	URLAuth          media.URLAuth `json:"urlAuth,omitempty"`
 }
+
+func (s Settings) ReviewModelID() string {
+	if _, ok := LookupReview(s.LiveReviewModel); ok {
+		return s.LiveReviewModel
+	}
+	return RecommendedID
+}
+
 type Status struct {
 	ID      string `json:"id,omitempty"`
 	Managed bool   `json:"managed,omitempty"`
@@ -123,7 +158,7 @@ func (m Manager) Settings() Settings {
 		_ = json.Unmarshal(b, &s)
 	}
 	if s.Language == "" {
-		s.Language = "auto"
+		s.Language = DefaultLanguage
 	}
 	return s
 }
@@ -160,7 +195,7 @@ func (m Manager) candidates(s Settings, model Model) []string {
 	}
 	add(m.managedPath(model))
 	add(m.recoveryPath(model))
-	if model.ID == DefaultID {
+	if model.ID == FullTurboID {
 		matches, _ := filepath.Glob(filepath.Join(m.Root(), "models", "large-v3-turbo-[0-9]*.bin"))
 		for _, p := range matches {
 			add(p)
@@ -184,7 +219,7 @@ func (m Manager) managedPath(model Model) string {
 }
 
 func (m Manager) recoveryPath(model Model) string {
-	return filepath.Join(m.Root(), "models", model.ID+"-verified.bin")
+	return filepath.Join(m.Root(), "models", model.ID+"-verified"+filepath.Ext(model.filename))
 }
 
 func (m Manager) managed(path string, model Model) bool {
@@ -194,12 +229,16 @@ func (m Manager) managed(path string, model Model) bool {
 }
 
 func Verify(ctx context.Context, path string) error {
-	model, _ := Lookup(DefaultID)
+	model, _ := Lookup(FullTurboID)
 	return verify(ctx, path, model)
 }
 
 func verify(ctx context.Context, path string, model Model) error {
-	digest, err := checksum(ctx, path)
+	magic := "lmgg"
+	if model.ID == CleanupID {
+		magic = "GGUF"
+	}
+	digest, err := checksum(ctx, path, magic)
 	if err != nil {
 		return err
 	}
@@ -210,7 +249,7 @@ func verify(ctx context.Context, path string, model Model) error {
 }
 
 func Identify(ctx context.Context, path string) (Model, error) {
-	digest, err := checksum(ctx, path)
+	digest, err := checksum(ctx, path, "lmgg")
 	if err != nil {
 		return Model{}, err
 	}
@@ -222,7 +261,7 @@ func Identify(ctx context.Context, path string) (Model, error) {
 	return Model{}, errors.New("SHA-256 does not match a supported Whisper model")
 }
 
-func checksum(ctx context.Context, path string) (string, error) {
+func checksum(ctx context.Context, path, magic string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return "", err
@@ -239,7 +278,10 @@ func checksum(ctx context.Context, path string) (string, error) {
 	if _, err = io.ReadFull(f, header[:]); err != nil {
 		return "", err
 	}
-	if string(header[:]) != "lmgg" {
+	if string(header[:]) != magic {
+		if magic == "GGUF" {
+			return "", errors.New("incompatible format: expected GGUF")
+		}
 		return "", errors.New("incompatible format: expected whisper.cpp GGML")
 	}
 	h := sha256.New()
@@ -293,7 +335,7 @@ func (m Manager) Discover(ctx context.Context) (Status, error) {
 }
 
 func (m Manager) DiscoverModel(ctx context.Context, s Settings, id string) (Status, error) {
-	model, ok := Lookup(id)
+	model, ok := LookupReview(id)
 	if !ok {
 		return Status{ID: id, State: "missing"}, fmt.Errorf("unknown model %q", id)
 	}
@@ -336,7 +378,7 @@ func (m Manager) Ensure(ctx context.Context, download bool, progress func(int64)
 
 // Download never overwrites an existing model. A failed download removes its temporary file.
 func (m Manager) Download(ctx context.Context, s Settings, id string, progress func(int64)) (Status, error) {
-	model, ok := Lookup(id)
+	model, ok := LookupReview(id)
 	if !ok {
 		return Status{}, fmt.Errorf("unknown model %q", id)
 	}
@@ -356,7 +398,11 @@ func (m Manager) Download(ctx context.Context, s Settings, id string, progress f
 	}
 	defer os.Remove(tmp.Name())
 	defer tmp.Close()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, modelURL+model.filename, nil)
+	baseURL := modelURL
+	if id == CleanupID {
+		baseURL = cleanupURL
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+model.filename, nil)
 	if err != nil {
 		return Status{}, err
 	}
@@ -411,7 +457,7 @@ func (m Manager) Download(ctx context.Context, s Settings, id string, progress f
 }
 
 func (m Manager) Remove(status Status) error {
-	model, ok := Lookup(status.ID)
+	model, ok := LookupReview(status.ID)
 	if !ok || !m.managed(status.Path, model) {
 		return errors.New("only models downloaded into Tala’s model folder can be removed here")
 	}
@@ -455,7 +501,7 @@ func (m Manager) EffectiveID(s Settings, statuses map[string]Status) string {
 	if override := Environment("MODEL_PATH"); override != "" {
 		override = filepath.Clean(m.expand(override))
 		for id, status := range statuses {
-			if status.Path == override {
+			if id != CleanupID && status.Path == override {
 				return id
 			}
 		}

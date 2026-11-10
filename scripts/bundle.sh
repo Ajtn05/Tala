@@ -20,6 +20,11 @@ mkdir -p "$bundle/Contents/MacOS" "$resources"
 cp tala "$bundle/Contents/MacOS/tala"
 bash scripts/copy-notices.sh "$resources"
 bash scripts/media-tools.sh "$bundle/Contents/Helpers" "$resources"
+bash scripts/cleanup-runtime.sh
+cp third_party/build-llama/bin/llama-server "$bundle/Contents/Helpers/llama-server"
+cp third_party/llama.cpp/LICENSE "$resources/llama.cpp-LICENSE.txt"
+cp third_party/llama.cpp/licenses/LICENSE-jsonhpp "$resources/llama.cpp-JSON-LICENSE.txt"
+cp third_party/llama.cpp/vendor/cpp-httplib/LICENSE "$resources/llama.cpp-HTTP-LICENSE.txt"
 cp internal/dashboard/assets/Manrope-OFL.txt "$resources/Manrope-OFL.txt"
 
 # Build the Finder and Dock icon from the same artwork used on the product page.

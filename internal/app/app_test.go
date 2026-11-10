@@ -123,7 +123,7 @@ func TestHeadlessLeavesEarlierWaitingJobsAlone(t *testing.T) {
 	if got := c.recognitionSettings(); got.Prompt != "barangay" || got.Language != "tl" {
 		t.Fatal("invocation overrides were ignored")
 	}
-	if got := manager.Settings(); got.Prompt != "" || got.Language != "auto" {
+	if got := manager.Settings(); got.Prompt != "" || got.Language != models.DefaultLanguage {
 		t.Fatal("invocation overrides changed saved settings")
 	}
 }
@@ -446,10 +446,10 @@ func TestQueuedModelSurvivesDefaultChangeAndRetry(t *testing.T) {
 	c := controller(t)
 	c.modelScanDone = true
 	c.modelStates = map[string]models.Status{
-		models.DefaultID: {ID: models.DefaultID, Path: "/turbo.bin"},
-		"small-q5":       {ID: "small-q5", Path: "/small.bin"},
+		models.FullTurboID: {ID: models.FullTurboID, Path: "/turbo.bin"},
+		"small-q5":         {ID: "small-q5", Path: "/small.bin"},
 	}
-	c.Model = c.modelStates[models.DefaultID]
+	c.Model = c.modelStates[models.FullTurboID]
 	path := filepath.Join(t.TempDir(), "audio.wav")
 	if err := os.WriteFile(path, nil, 0600); err != nil {
 		t.Fatal(err)
@@ -458,7 +458,7 @@ func TestQueuedModelSurvivesDefaultChangeAndRetry(t *testing.T) {
 	if err != nil || job.ModelID != "small-q5" {
 		t.Fatalf("model choice not captured: %+v, %v", job, err)
 	}
-	if err := c.SetModelPreference(models.DefaultID, true); err != nil {
+	if err := c.SetModelPreference(models.FullTurboID, true); err != nil {
 		t.Fatal(err)
 	}
 	c.changeJob(job.ID, func(j *Job) { j.State = "failed" })
@@ -476,7 +476,7 @@ func TestQueuedModelSurvivesDefaultChangeAndRetry(t *testing.T) {
 	if len(saved) != 1 || saved[0].ModelID != "small-q5" || saved[0].State != "waiting" {
 		t.Fatalf("retry changed the queued model: %+v", saved)
 	}
-	if status := c.jobModelLocked(Job{}); status.ID != models.DefaultID {
+	if status := c.jobModelLocked(Job{}); status.ID != models.FullTurboID {
 		t.Fatalf("a pre-upgrade job no longer uses the original Turbo model: %+v", status)
 	}
 	if _, err := c.EnqueueWithOptions(path, "file", ImportOptions{ModelID: "large-v3"}); err == nil {

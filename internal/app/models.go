@@ -33,6 +33,9 @@ func (c *Controller) scanModels(settings models.Settings) map[string]models.Stat
 		status, _ := c.Models.DiscoverModel(c.ctx, settings, model.ID)
 		statuses[model.ID] = status
 	}
+	if !c.headless && cleanupExecutable(c.Models.Exe) != "" {
+		statuses[models.CleanupID], _ = c.Models.DiscoverModel(c.ctx, settings, models.CleanupID)
+	}
 	return statuses
 }
 
@@ -91,7 +94,7 @@ func (c *Controller) modelForRequestLocked(id string, requireInstalled bool) (mo
 func (c *Controller) jobModelLocked(job Job) models.Status {
 	id := job.ModelID
 	if id == "" {
-		id = models.DefaultID
+		id = models.FullTurboID // Older queued jobs predate model selection.
 	}
 	status := c.modelStates[id]
 	status.ID = id
@@ -104,8 +107,8 @@ func (c *Controller) Configure(s models.Settings) error {
 	if err := s.URLAuth.Validate(); err != nil {
 		return err
 	}
-	if s.Language != "auto" && s.Language != "en" && s.Language != "tl" {
-		return errors.New("choose automatic, English, or Filipino")
+	if !models.ValidLanguage(s.Language) {
+		return errors.New("choose Taglish, automatic, English, or Filipino")
 	}
 	c.mu.Lock()
 	if c.live.Active || c.activeJob != "" || c.modelBusy {
@@ -118,6 +121,7 @@ func (c *Controller) Configure(s models.Settings) error {
 	old := c.Models.Settings()
 	// Model preferences have their own controls, so a recognition save cannot overwrite them.
 	s.DefaultModel, s.AskModel = old.DefaultModel, old.AskModel
+	s.LiveReview, s.LiveReviewModel = old.LiveReview, old.LiveReviewModel
 	pathsChanged := old.ModelPath != s.ModelPath || old.ModelDir != s.ModelDir
 	if s.ModelPath != old.ModelPath && s.ModelPath != "" {
 		model, err := c.Models.IdentifyPath(c.ctx, s.ModelPath)
@@ -165,9 +169,12 @@ func (c *Controller) SetModelPreference(id string, ask bool) error {
 }
 
 func (c *Controller) DownloadModel(id string) error {
-	spec, ok := models.Lookup(id)
+	spec, ok := models.LookupReview(id)
 	if !ok {
 		return fmt.Errorf("unknown model %q", id)
+	}
+	if id == models.CleanupID && (c.headless || cleanupExecutable(c.Models.Exe) == "") {
+		return errors.New("contextual cleanup requires the bundled Tala app")
 	}
 	c.mu.Lock()
 	if !c.modelScanDone || c.modelBusy {
@@ -201,10 +208,10 @@ func (c *Controller) DownloadModel(id string) error {
 	hasModel := false
 	for key, current := range c.modelStates {
 		statuses[key] = current
-		hasModel = hasModel || current.Path != ""
+		hasModel = hasModel || (key != models.CleanupID && current.Path != "")
 	}
 	statuses[id] = status
-	if !hasModel && s.DefaultModel == "" {
+	if id != models.CleanupID && !hasModel && s.DefaultModel == "" {
 		s.DefaultModel = id
 		if err := c.Models.Save(s); err != nil {
 			c.updateModelStatesLocked(c.Models.Settings(), statuses)

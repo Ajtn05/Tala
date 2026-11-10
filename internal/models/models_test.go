@@ -16,7 +16,8 @@ func TestCandidatesIncludeConfiguredAndWorkspace(t *testing.T) {
 	m := Manager{Home: "/Users/test", Exe: "/Applications/Tala.app/Contents/MacOS/tala", WorkingDir: "/workspace"}
 	paths := m.Candidates(Settings{ModelPath: "~/my-model.bin", ModelDir: "/configured"})
 	joined := strings.Join(paths, "\n")
-	for _, p := range []string{"/external/model.bin", "/external/models/" + Name, "/Users/test/my-model.bin", "/configured/" + Name, filepath.Join(m.Root(), "models", Name), "/workspace/models/" + Name} {
+	const defaultFilename = "ggml-large-v3-turbo-q5_0.bin"
+	for _, p := range []string{"/external/model.bin", "/external/models/" + defaultFilename, "/Users/test/my-model.bin", "/configured/" + defaultFilename, filepath.Join(m.Root(), "models", defaultFilename), "/workspace/models/" + defaultFilename} {
 		if !strings.Contains(joined, p) {
 			t.Errorf("missing candidate %s", p)
 		}
@@ -73,10 +74,10 @@ func TestEnsureWithoutDownloadPreservesAllFiles(t *testing.T) {
 func TestSettingsSurviveNewManager(t *testing.T) {
 	t.Setenv("TALA_DATA_DIR", t.TempDir())
 	m := Manager{}
-	if m.Settings().MenuBarIcon {
-		t.Fatal("menu bar icon must default to off")
+	if got := m.Settings(); got.MenuBarIcon || got.Language != "taglish" || got.DefaultID() != "large-v3-turbo-q5" {
+		t.Fatalf("unexpected defaults: %+v, model %s", got, got.DefaultID())
 	}
-	want := Settings{ModelPath: "/original/model.bin", ModelDir: "/models", Language: "auto", Prompt: "Taglish", MenuBarIcon: true}
+	want := Settings{DefaultModel: FullTurboID, ModelPath: "/original/model.bin", ModelDir: "/models", Language: "auto", Prompt: "Taglish", MenuBarIcon: true}
 	if e := m.Save(want); e != nil {
 		t.Fatal(e)
 	}
