@@ -17,7 +17,8 @@ type Decoder func(context.Context, []float32) ([]transcriber.Segment, error)
 
 // Run stops taking new input when ctx is canceled and finalizes the audio that
 // was already captured. A decoder or persistence failure aborts all stages.
-func Run(ctx context.Context, input Input, decode Decoder, save func(transcriber.Segment) error) (time.Duration, error) {
+// Scored segments include a read-only PCM clip for optional review.
+func Run(ctx context.Context, input Input, decode Decoder, save func(transcriber.Segment, []float32) error) (time.Duration, error) {
 	capture, stop := context.WithCancel(ctx)
 	defer stop()
 	group, drain := errgroup.WithContext(context.WithoutCancel(ctx))
@@ -65,8 +66,9 @@ func Run(ctx context.Context, input Input, decode Decoder, save func(transcriber
 	return recorded, captureErr
 }
 
-func recognize(ctx context.Context, w window, decode Decoder, save func(transcriber.Segment) error) error {
+func recognize(ctx context.Context, w window, decode Decoder, save func(transcriber.Segment, []float32) error) error {
 	samples := resample(w.samples, w.rate)
+	actual := samples
 	if len(samples) < transcriber.SampleRate {
 		// Whisper requires a minimum input window. Preserve the actual end time
 		// when the last phrase is shorter than that window.
@@ -81,10 +83,20 @@ func recognize(ctx context.Context, w window, decode Decoder, save func(transcri
 		if part.Start >= duration {
 			continue
 		}
+		var clip []float32
+		if len(part.TokenScores) > 0 && part.End > part.Start {
+			// Give the second pass a little context without including the
+			// artificial padding added for short recording windows.
+			const margin = 180 * time.Millisecond
+			const samplePeriod = time.Second / transcriber.SampleRate
+			first := min(len(actual), int(max(0, part.Start-margin)/samplePeriod))
+			last := min(len(actual), int(max(0, part.End+margin)/samplePeriod))
+			clip = actual[first:last]
+		}
 		part.Source = w.source
 		part.Start = w.start + max(0, part.Start)
 		part.End = max(part.Start, w.start+min(duration, part.End))
-		if err := save(part); err != nil {
+		if err := save(part, clip); err != nil {
 			return fmt.Errorf("save recording segment: %w", err)
 		}
 	}

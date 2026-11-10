@@ -202,7 +202,16 @@ func (h *Host) dispatch(r request) (any, error) {
 		}
 		return ids, nil
 	case "start":
-		return nil, c.Start()
+		var id string
+		if err := decode(r.Data, &id); err != nil {
+			return nil, err
+		}
+		if r.ID < 0 && (c.Models.Settings().AskModel || c.ModelState().Path == "") {
+			h.Show()
+			h.Send(app.Event{Type: "chooseRecordingModel"})
+			return nil, nil
+		}
+		return nil, c.StartWithModel(id)
 	case "stop":
 		c.Stop()
 		return nil, nil
@@ -216,6 +225,24 @@ func (h *Host) dispatch(r request) (any, error) {
 		var id string
 		_ = decode(r.Data, &id)
 		return c.Store.Get(id)
+	case "liveReview":
+		var d struct {
+			Enabled bool
+			ModelID string
+		}
+		if err := decode(r.Data, &d); err != nil {
+			return nil, err
+		}
+		return nil, c.ConfigureLiveReview(d.Enabled, d.ModelID)
+	case "resolveReviewSuggestion":
+		var d struct {
+			ID, Segment string
+			Accept      bool
+		}
+		if err := decode(r.Data, &d); err != nil {
+			return nil, err
+		}
+		return nil, c.ResolveReviewSuggestion(d.ID, d.Segment, d.Accept)
 	case "rename":
 		var d struct{ ID, Title string }
 		_ = decode(r.Data, &d)
@@ -236,12 +263,10 @@ func (h *Host) dispatch(r request) (any, error) {
 			ID, Segment string
 			Text        *string
 		}
-		_ = decode(r.Data, &d)
-		e := c.Store.Correct(d.ID, d.Segment, d.Text)
-		if e == nil {
-			c.Emit("correction", d)
+		if err := decode(r.Data, &d); err != nil {
+			return nil, err
 		}
-		return nil, e
+		return nil, c.CorrectSegment(d.ID, d.Segment, d.Text)
 	case "enqueue":
 		var d struct {
 			Sources []string
@@ -249,12 +274,13 @@ func (h *Host) dispatch(r request) (any, error) {
 			Retain  bool
 			Range   media.TimeRange
 			Title   string
+			ModelID string
 		}
 		if e := decode(r.Data, &d); e != nil {
 			return nil, e
 		}
 		for _, p := range d.Sources {
-			if _, e := c.EnqueueWithOptions(p, d.Kind, app.ImportOptions{Retain: d.Retain, Range: d.Range, Title: d.Title}); e != nil {
+			if _, e := c.EnqueueWithOptions(p, d.Kind, app.ImportOptions{Retain: d.Retain, Range: d.Range, Title: d.Title, ModelID: d.ModelID}); e != nil {
 				return nil, e
 			}
 		}
@@ -325,15 +351,34 @@ func (h *Host) dispatch(r request) (any, error) {
 		if e := decode(r.Data, &s); e != nil {
 			return nil, e
 		}
-		return nil, c.Configure(s)
+		if err := c.Configure(s); err != nil {
+			return nil, err
+		}
+		return c.Models.Settings(), nil
 	case "menuBarIcon":
 		var enabled bool
 		if e := decode(r.Data, &enabled); e != nil {
 			return nil, e
 		}
 		return nil, c.SetMenuBarIcon(enabled)
-	case "downloadModel":
-		return nil, c.DownloadModel()
+	case "downloadModel", "removeModel":
+		var id string
+		if err := decode(r.Data, &id); err != nil {
+			return nil, err
+		}
+		if r.Action == "removeModel" {
+			return nil, c.RemoveModel(id)
+		}
+		return nil, c.DownloadModel(id)
+	case "modelPreference":
+		var d struct {
+			ID  string
+			Ask bool
+		}
+		if err := decode(r.Data, &d); err != nil {
+			return nil, err
+		}
+		return nil, c.SetModelPreference(d.ID, d.Ask)
 	case "verifyModel":
 		go c.Discover()
 		return nil, nil

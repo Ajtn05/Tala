@@ -170,7 +170,7 @@ void dashboardQuit(void){dispatch_async(dispatch_get_main_queue(),^{[host quitTa
 void dashboardSend(const char *json){NSString *s=[NSString stringWithUTF8String:json];dispatch_semaphore_t ack=dispatch_semaphore_create(0);dispatch_async(dispatch_get_main_queue(),^{if(host.web){[host.web evaluateJavaScript:[NSString stringWithFormat:@"window.receive && window.receive(%@)",s] completionHandler:^(id value,NSError *error){dispatch_semaphore_signal(ack);}];}else{dispatch_semaphore_signal(ack);}});dispatch_semaphore_wait(ack,dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC));}
 void dashboardPickFiles(int mode){dispatch_async(dispatch_get_main_queue(),^{
  NSOpenPanel *panel=[NSOpenPanel openPanel];panel.canChooseDirectories=NO;panel.allowsMultipleSelection=mode==0;
- panel.message=mode==1?@"Choose a verified Whisper Large v3 Turbo GGML model":mode==2?@"Choose a Netscape cookies.txt export from your signed-in browser":@"Choose audio or video files";
+ panel.message=mode==1?@"Choose a supported Whisper GGML model":mode==2?@"Choose a Netscape cookies.txt export from your signed-in browser":@"Choose audio or video files";
  [panel beginSheetModalForWindow:host.window completionHandler:^(NSModalResponse result){if(result==NSModalResponseOK){
   NSMutableArray *paths=[NSMutableArray array];for(NSURL *url in panel.URLs){[paths addObject:url.path];}
   sendEvent(mode==1?@"modelFile":mode==2?@"cookiesFile":@"files",paths);

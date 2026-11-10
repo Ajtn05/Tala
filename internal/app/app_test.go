@@ -123,7 +123,7 @@ func TestHeadlessLeavesEarlierWaitingJobsAlone(t *testing.T) {
 	if got := c.recognitionSettings(); got.Prompt != "barangay" || got.Language != "tl" {
 		t.Fatal("invocation overrides were ignored")
 	}
-	if got := manager.Settings(); got.Prompt != "" || got.Language != "auto" {
+	if got := manager.Settings(); got.Prompt != "" || got.Language != models.DefaultLanguage {
 		t.Fatal("invocation overrides changed saved settings")
 	}
 }
@@ -430,5 +430,56 @@ func TestClearQueueRollsBackWhenPersistenceFails(t *testing.T) {
 	}
 	if len(c.Jobs()) != 1 || ctx.Err() != nil {
 		t.Fatal("failed clear changed queue or cancelled work")
+	}
+}
+
+func TestQueuedModelSurvivesDefaultChangeAndRetry(t *testing.T) {
+	t.Setenv("TALA_DATA_DIR", t.TempDir())
+	t.Setenv("TALA_MODEL_PATH", "")
+	tools := t.TempDir()
+	t.Setenv("PATH", tools)
+	for _, name := range []string{"ffmpeg", "ffprobe"} {
+		if err := os.WriteFile(filepath.Join(tools, name), []byte("#!/bin/sh\n"), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c := controller(t)
+	c.modelScanDone = true
+	c.modelStates = map[string]models.Status{
+		models.FullTurboID: {ID: models.FullTurboID, Path: "/turbo.bin"},
+		"small-q5":         {ID: "small-q5", Path: "/small.bin"},
+	}
+	c.Model = c.modelStates[models.FullTurboID]
+	path := filepath.Join(t.TempDir(), "audio.wav")
+	if err := os.WriteFile(path, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	job, err := c.EnqueueWithOptions(path, "file", ImportOptions{ModelID: "small-q5"})
+	if err != nil || job.ModelID != "small-q5" {
+		t.Fatalf("model choice not captured: %+v, %v", job, err)
+	}
+	if err := c.SetModelPreference(models.FullTurboID, true); err != nil {
+		t.Fatal(err)
+	}
+	c.changeJob(job.ID, func(j *Job) { j.State = "failed" })
+	if err := c.Retry(job.ID); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(c.queuePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved []Job
+	if err := json.Unmarshal(data, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if len(saved) != 1 || saved[0].ModelID != "small-q5" || saved[0].State != "waiting" {
+		t.Fatalf("retry changed the queued model: %+v", saved)
+	}
+	if status := c.jobModelLocked(Job{}); status.ID != models.FullTurboID {
+		t.Fatalf("a pre-upgrade job no longer uses the original Turbo model: %+v", status)
+	}
+	if _, err := c.EnqueueWithOptions(path, "file", ImportOptions{ModelID: "large-v3"}); err == nil {
+		t.Fatal("queued an explicitly selected model that is not installed")
 	}
 }

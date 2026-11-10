@@ -32,6 +32,7 @@ type Segment struct {
 	Untimed   bool    `json:"untimed,omitempty"`
 }
 type Session struct {
+	ModelID     string            `json:"modelId,omitempty"`
 	ID          string            `json:"id"`
 	Title       string            `json:"title"`
 	Created     time.Time         `json:"created"`
@@ -43,6 +44,7 @@ type Session struct {
 	Status      string            `json:"status"`
 	Preview     string            `json:"preview"`
 	Corrections map[string]string `json:"corrections"`
+	Suggestions map[string]string `json:"suggestions,omitempty"`
 	Segments    []Segment         `json:"segments,omitempty"`
 	LegacyPath  string            `json:"legacyPath,omitempty"`
 }
@@ -80,9 +82,12 @@ func (s *Store) save(v Session) error {
 	return models.AtomicWrite(p, b)
 }
 func (s *Store) Create(kind, title, source string) (Session, error) {
+	return s.CreateWithModel(kind, title, source, "")
+}
+func (s *Store) CreateWithModel(kind, title, source, modelID string) (Session, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	v := Session{ID: ID(), Title: title, Created: time.Now(), Type: kind, Source: source, Status: "processing", Corrections: map[string]string{}}
+	v := Session{ID: ID(), ModelID: modelID, Title: title, Created: time.Now(), Type: kind, Source: source, Status: "processing", Corrections: map[string]string{}}
 	return v, s.save(v)
 }
 func (s *Store) read(id string, segments bool) (Session, error) {
@@ -221,7 +226,51 @@ func (s *Store) Correct(id, segID string, text *string) error {
 	} else {
 		v.Corrections[segID] = *text
 	}
+	delete(v.Suggestions, segID)
 	return s.save(v)
+}
+
+// Suggest records an alternative for a newly appended segment, unless the user
+// has already corrected it.
+func (s *Store) Suggest(id, segID, text string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	v, err := s.read(id, false)
+	if err != nil {
+		return false, err
+	}
+	if _, corrected := v.Corrections[segID]; corrected {
+		return false, nil
+	}
+	if v.Suggestions == nil {
+		v.Suggestions = make(map[string]string)
+	}
+	v.Suggestions[segID] = text
+	return true, s.save(v)
+}
+
+func (s *Store) ResolveSuggestion(id, segID string, accept bool) (*string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	v, err := s.read(id, false)
+	if err != nil {
+		return nil, err
+	}
+	text, pending := v.Suggestions[segID]
+	if !pending {
+		return nil, errors.New("this suggestion is no longer available")
+	}
+	delete(v.Suggestions, segID)
+	if accept {
+		v.Corrections[segID] = text
+	}
+	if err := s.save(v); err != nil {
+		return nil, err
+	}
+	if accept {
+		return &text, nil
+	}
+	return nil, nil
 }
 func (s *Store) Delete(id string) error {
 	s.mu.Lock()

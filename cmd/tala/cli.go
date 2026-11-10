@@ -31,7 +31,7 @@ type options struct {
 	start, end, cookieBrowser, cookieProfile                             string
 	cookieBrowserSet                                                     bool
 	cookiesFile                                                          string
-	progress                                                             string
+	progress, modelID                                                    string
 	selection                                                            media.TimeRange
 	checkDependencies, checkModel, ensureModel, record, list, singleLine bool
 	input                                                                inputs
@@ -59,8 +59,9 @@ func parseOptions(args []string, stderr io.Writer) (options, error) {
 	f.StringVar(&o.cookiesFile, "cookies", "", "Local Netscape cookies.txt export for Dia or other browsers (original is preserved)")
 	f.StringVar(&o.progress, "progress", "auto", "Progress on stderr: auto (terminal bar/plain log lines), always (bar), or never")
 	f.StringVar(&o.output, "output", "", "Directory for saved sessions (TALA_OUTPUT_DIR overrides the platform default)")
-	f.StringVar(&o.model, "model", "", "Existing Large v3 Turbo GGML model path")
-	f.StringVar(&o.language, "language", "", "auto, en, or tl (default: saved setting or auto)")
+	f.StringVar(&o.model, "model", "", "Existing supported Whisper GGML model path")
+	f.StringVar(&o.modelID, "model-id", "", "Installed or downloadable model: large-v3-turbo, large-v3-turbo-q5, large-v3, small-q5")
+	f.StringVar(&o.language, "language", "", "taglish, auto, en, or tl (uses the saved setting when set, otherwise taglish)")
 	f.StringVar(&o.prompt, "prompt", "", "Vocabulary/context hint (not rewriting instructions; overrides saved hint)")
 	f.BoolVar(&o.skipQuiet, "skip-quiet-imports", false, "Skip nearly silent import windows (overrides the saved setting)")
 	f.BoolVar(&o.record, "record", false, "Record live audio until Ctrl+C or --duration expires")
@@ -130,8 +131,8 @@ func parseOptions(args []string, stderr io.Writer) (options, error) {
 	if o.duration > 0 && !o.record {
 		return o, errors.New("--duration requires --record")
 	}
-	if o.language != "" && o.language != "auto" && o.language != "en" && o.language != "tl" {
-		return o, errors.New("--language must be auto, en, or tl")
+	if o.language != "" && !models.ValidLanguage(o.language) {
+		return o, errors.New("--language must be taglish, auto, en, or tl")
 	}
 	if o.source != "microphone" && o.source != "system" && o.source != "both" {
 		return o, errors.New("--source must be microphone, system, or both")
@@ -147,6 +148,14 @@ func parseOptions(args []string, stderr io.Writer) (options, error) {
 	}
 	if len(o.input) > 1 && (o.format == "srt" || o.format == "vtt") {
 		return o, errors.New("export subtitles for one input per invocation so timings belong to a single recording")
+	}
+	if o.modelID != "" {
+		if _, ok := models.Lookup(o.modelID); !ok {
+			return o, fmt.Errorf("unknown model ID %q", o.modelID)
+		}
+		if o.model != "" || !(o.ensureModel || o.checkModel || o.record || len(o.input) > 0) {
+			return o, errors.New("--model-id requires transcription or a model check/download and cannot be combined with --model")
+		}
 	}
 	if commands == 0 && (o.language != "" || o.promptSet || o.model != "" || o.singleLine) {
 		return o, errors.New("recognition and text options require --transcribe, --record, --export, or a diagnostic command")
@@ -213,7 +222,16 @@ func execute(ctx context.Context, o options, manager models.Manager, stdout, std
 		return nil
 	}
 	if o.checkModel || o.ensureModel {
-		status, err := manager.Ensure(ctx, o.ensureModel, nil)
+		var status models.Status
+		var err error
+		switch {
+		case o.modelID == "":
+			status, err = manager.Ensure(ctx, o.ensureModel, nil)
+		case o.ensureModel:
+			status, err = manager.Download(ctx, manager.Settings(), o.modelID, nil)
+		default:
+			status, err = manager.DiscoverModel(ctx, manager.Settings(), o.modelID)
+		}
 		if writeErr := writeJSON(stdout, status); writeErr != nil {
 			return writeErr
 		}
@@ -306,7 +324,7 @@ func execute(ctx context.Context, o options, manager models.Manager, stdout, std
 			}
 		}
 	}()
-	if err := waitModel(ctx, c, progress); err != nil {
+	if err := waitModelFor(ctx, c, progress, o.modelID); err != nil {
 		return err
 	}
 	if o.record {
@@ -314,7 +332,7 @@ func execute(ctx context.Context, o options, manager models.Manager, stdout, std
 		if err := c.SetMode(mode); err != nil {
 			return err
 		}
-		if err := c.Start(); err != nil {
+		if err := c.StartWithModel(o.modelID); err != nil {
 			return err
 		}
 		id := c.LiveState().SessionID
@@ -325,7 +343,7 @@ func execute(ctx context.Context, o options, manager models.Manager, stdout, std
 		return exportSession(store, id, o, stdout)
 	}
 	for i, input := range o.input {
-		job, err := c.EnqueueRange(input, inputKind(input), false, o.selection)
+		job, err := c.EnqueueWithOptions(input, inputKind(input), app.ImportOptions{Range: o.selection, ModelID: o.modelID})
 		if err != nil {
 			return err
 		}
@@ -357,13 +375,19 @@ func inputKind(input string) string {
 	return "file"
 }
 func waitModel(ctx context.Context, c *app.Controller, progress *cliProgress) error {
+	return waitModelFor(ctx, c, progress, "")
+}
+func waitModelFor(ctx context.Context, c *app.Controller, progress *cliProgress, modelID string) error {
 	started := time.Now()
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		status := c.ModelState()
+		status := c.ModelStateFor(modelID)
 		if status.State != "" && status.State != "checking" {
 			if status.Path == "" {
+				if modelID != "" {
+					return fmt.Errorf("no verified model: %s; use --model-id %s --ensure-model", status.Detail, modelID)
+				}
 				return fmt.Errorf("no verified model: %s; use --model PATH or --ensure-model", status.Detail)
 			}
 			return nil

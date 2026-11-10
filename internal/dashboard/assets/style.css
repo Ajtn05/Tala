@@ -1021,6 +1021,31 @@ progress::-webkit-progress-value {
   color: var(--muted);
   font-size: 12px;
 }
+.live-review-status {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+}
+.segment-suggestion {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 8px;
+  margin-top: 7px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.segment-suggestion strong {
+  color: var(--accent);
+}
+.segment-suggestion button {
+  padding: 3px 8px;
+  font-size: inherit;
+}
+.transcript.continuous .segment-suggestion {
+  display: inline-flex;
+  margin: 0 7px 0 0;
+}
 .segment.corrected .edited {
   display: inline;
   font-size: 9px;
@@ -1824,4 +1849,68 @@ progress::-webkit-progress-value {
   .history-group .session-row { padding: 10px; }
   nav .nav-icon { display: none; }
   nav button { font-size: 10px; }
+}
+
+.model-library {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  border-top: 1px solid var(--line);
+}
+.model-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+.model-entry strong { font-size: 14px; }
+.model-entry small {
+  display: block;
+  color: var(--muted);
+  margin: 4px 0;
+  overflow-wrap: anywhere;
+}
+.model-entry p { margin: 4px 0 0; }
+.model-entry progress { width: min(100%, 320px); }
+.model-tag {
+  margin-left: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+}
+.model-preferences {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.model-file-settings { margin-top: 14px; }
+.model-file-settings summary { cursor: pointer; font-size: 12px; }
+.model-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.model-picker select {
+  min-width: 0;
+  width: 100%;
+}
+.record-bar .model-picker { flex: 1 1 175px; }
+.record-bar .model-picker select {
+  border-color: var(--line);
+  padding-left: 8px;
+}
+@media (max-width: 1050px) and (min-width: 851px) {
+  .record-bar { gap: 12px; }
+}
+@media (max-width: 850px) {
+  .record-bar .model-picker { grid-column: 1; }
+}
+@media (max-width: 620px) {
+  .record-bar .model-picker { grid-column: 1 / -1; }
+  .model-preferences { display: block; }
 }
