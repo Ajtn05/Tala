@@ -1,0 +1,61 @@
+name: Publish release packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag
+        required: true
+        type: string
+      build_run:
+        description: Successful Build release packages run ID
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      BUILD_RUN: ${{ inputs.build_run }}
+    steps:
+      - name: Verify the build matches the draft release tag
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$BUILD_RUN" =~ ^[0-9]+$ ]]
+          gh api "repos/$GH_REPO/actions/runs/$BUILD_RUN" > run.json
+          jq -e '.conclusion == "success" and .path == ".github/workflows/release-build.yml"' run.json
+          gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" > tag.json
+          tag_commit="$(jq -r .object.sha tag.json)"
+          if [[ "$(jq -r .object.type tag.json)" == tag ]]; then
+            tag_commit="$(gh api "repos/$GH_REPO/git/tags/$tag_commit" --jq .object.sha)"
+          fi
+          test "$tag_commit" = "$(jq -r .head_sha run.json)"
+          test "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = true
+      - name: Download tested packages and write checksums
+        run: |
+          set -euo pipefail
+          gh run download "$BUILD_RUN" --dir packages
+          mkdir release
+          cp packages/macos-arm64/Tala.dmg packages/linux-x86_64/tala-linux-x86_64.tar.gz release/
+          cd release
+          sha256sum Tala.dmg tala-linux-x86_64.tar.gz > SHA256SUMS.txt
+      - name: Upload packages and publish the release
+        run: |
+          set -euo pipefail
+          gh release upload "$RELEASE_TAG" release/Tala.dmg release/tala-linux-x86_64.tar.gz release/SHA256SUMS.txt --clobber
+          gh release edit "$RELEASE_TAG" --draft=false --latest
