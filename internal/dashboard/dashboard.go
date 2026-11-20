@@ -73,11 +73,13 @@ func (h *Host) Init() {
 	html, _ := assets.ReadFile("assets/index.html")
 	css, _ := assets.ReadFile("assets/style.css")
 	js, _ := assets.ReadFile("assets/app.js")
+	markdown, _ := assets.ReadFile("assets/markdown-it.umd.min.js")
 	logo, _ := assets.ReadFile("assets/logo.svg")
 	font, _ := assets.ReadFile("assets/manrope.ttf")
 	page := strings.ReplaceAll(string(html), "/*STYLE*/", string(css))
 	page = strings.ReplaceAll(page, "/*FONT*/", base64.StdEncoding.EncodeToString(font))
 	page = strings.ReplaceAll(page, "/*LOGO*/", string(logo))
+	page = strings.ReplaceAll(page, "/*MARKDOWN*/", string(markdown))
 	page = strings.ReplaceAll(page, "/*SCRIPT*/", "try {\n"+string(js)+"\n} catch(e) {document.getElementById('error').hidden=false;document.querySelector('#error span').textContent=String(e.stack||e);}")
 	p := str(page)
 	C.dashboardInit(p)
@@ -190,6 +192,9 @@ func (h *Host) dispatch(r request) (any, error) {
 				continue
 			}
 			match := strings.Contains(strings.ToLower(v.Title), q)
+			if v.Meeting != nil {
+				match = match || strings.Contains(strings.ToLower(v.Meeting.Notes), q) || strings.Contains(strings.ToLower(v.Meeting.Summary), q)
+			}
 			for _, seg := range v.Segments {
 				if strings.Contains(strings.ToLower(session.Text(v, seg)), q) {
 					match = true
@@ -212,6 +217,67 @@ func (h *Host) dispatch(r request) (any, error) {
 			return nil, nil
 		}
 		return nil, c.StartWithModel(id)
+	case "startMeeting":
+		var id string
+		if err := decode(r.Data, &id); err != nil {
+			return nil, err
+		}
+		return nil, c.StartMeetingWithModel(id)
+	case "saveMeetingNotes":
+		var d struct{ ID, Notes string }
+		if err := decode(r.Data, &d); err != nil {
+			return nil, err
+		}
+		return c.SaveMeetingNotes(d.ID, d.Notes)
+	case "saveEnhancedNotes":
+		var d struct{ ID, Text string }
+		if err := decode(r.Data, &d); err != nil {
+			return nil, err
+		}
+		return c.SaveEnhancedNotes(d.ID, d.Text)
+	case "summarizeMeeting":
+		var d app.MeetingSummaryRequest
+		if err := decode(r.Data, &d); err != nil {
+			return nil, err
+		}
+		return c.GenerateMeetingSummary(d)
+	case "meetingProvider":
+		var d struct{ Provider, Model, Key, Account string }
+		if err := decode(r.Data, &d); err != nil {
+			return nil, errors.New("invalid meeting provider settings")
+		}
+		return c.ConfigureMeetingProvider(d.Provider, d.Model, d.Key, d.Account)
+	case "meetingPrompts":
+		var prompts models.MeetingPrompts
+		if err := decode(r.Data, &prompts); err != nil {
+			return nil, err
+		}
+		return c.ConfigureMeetingPrompts(prompts)
+	case "chatGPTAccount":
+		var d struct{ Operation, Account string }
+		if err := decode(r.Data, &d); err != nil {
+			return nil, err
+		}
+		return c.ChangeChatGPTAccount(d.Operation, d.Account, func(url string) error { return openSignIn(url, "other") })
+	case "cancelChatGPTConnection":
+		c.CancelChatGPTConnection()
+		return nil, nil
+	case "manageChatGPTUsage":
+		return nil, openSignIn("https://chatgpt.com/settings/usage", "other")
+	case "chatGPTPrivacy":
+		return nil, openSignIn("https://openai.com/policies/privacy-policy/", "other")
+	case "removeMeetingProviderKey":
+		var provider string
+		if err := decode(r.Data, &provider); err != nil {
+			return nil, err
+		}
+		return c.RemoveMeetingProviderKey(provider)
+	case "cancelMeetingSummary":
+		var id string
+		if err := decode(r.Data, &id); err != nil {
+			return nil, err
+		}
+		return nil, c.CancelMeetingSummary(id)
 	case "stop":
 		c.Stop()
 		return nil, nil
@@ -403,7 +469,13 @@ func (h *Host) dispatch(r request) (any, error) {
 					return '-'
 				}
 				return r
-			}, v.Title) + "." + d.Format
+			}, v.Title)
+			if d.Mode == "meeting" {
+				name += " - meeting notes"
+			} else if d.Mode == "meeting-original" {
+				name += " - original notes"
+			}
+			name += "." + d.Format
 			n := str(name)
 			defer C.free(unsafe.Pointer(n))
 			C.dashboardSave(n, p)

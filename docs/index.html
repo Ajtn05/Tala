@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Turn lectures, org meetings, and voice recordings into searchable transcripts with Tala. English, Filipino, and Taglish transcription runs on your own computer.">
+  <meta name="description" content="Transcribe lectures and recordings locally in English, Filipino, or Taglish. Take meeting notes on your Mac and turn them into an editable recap with Tala.">
   <meta name="theme-color" content="#faf9f6">
   <title>Tala | For every “ansabi ni sir?”</title>
   <link rel="icon" href="assets/tala-icon.png" type="image/png">
@@ -25,6 +25,7 @@
         <p class="intro-description">Turn lectures, org meetings, and recordings into text you can search. From English to Filipino to the Taglish in between, Tala transcribes right on your computer.</p>
         <div class="actions">
           <a class="button primary" href="#installation">Get Tala</a>
+          <a class="button secondary" href="#meeting-notes">Explore meeting notes</a>
         </div>
         <p class="platform">Free and open source <span aria-hidden="true">/</span> macOS app &amp; Linux CLI</p>
       </div>
@@ -62,6 +63,22 @@
       </figure>
     </section>
 
+    <section class="wrap meeting-feature" id="meeting-notes" aria-labelledby="meeting-title">
+      <div class="meeting-copy">
+        <h2 id="meeting-title">From meeting notes to minutes.</h2>
+        <p>On Mac, choose <strong>Start meeting</strong> to open a Markdown notebook while Tala transcribes your microphone and system audio in the background.</p>
+        <p>After the call, <strong>Enhance notes</strong> adds deadlines, decisions, and action items from the transcript to a separate, editable copy. You can check the transcript and export either version as Markdown.</p>
+        <p>Enhance on your Mac, connect an eligible ChatGPT plan, or bring your own Gemini, OpenAI, or Claude API key.</p>
+        <a class="meeting-guide" href="https://github.com/Ajtn05/Tala/blob/main/docs/meetings.md">Read the meeting notes guide</a>
+      </div>
+      <figure class="product-shot">
+        <a href="screenshots/meeting-enhanced.png">
+          <img src="screenshots/meeting-enhanced.png" width="2000" height="1860" alt="Tala’s Enhanced notes tab with an editable recap, decisions, and a task checklist" loading="lazy">
+        </a>
+        <figcaption>The Enhanced notes tab with a sample org meeting.</figcaption>
+      </figure>
+    </section>
+
     <section class="campus-section" id="use-cases" aria-labelledby="uses-title">
       <div class="wrap section">
         <h2 id="uses-title">Straight from the class GC.</h2>
@@ -91,7 +108,7 @@
               Org meeting
             </div>
             <h3>“Send me the minutes of the meeting.”</h3>
-            <p>Export the transcript as text or Markdown, then pull out decisions and action items for your minutes.</p>
+            <p>Jot down what matters during the call. Afterward, fill in the decisions and action items from the transcript.</p>
           </article>
 
           <article class="campus-card replay-card">
@@ -170,8 +187,8 @@
       <div class="download-panel">
         <div class="download-copy">
           <h2 id="install-title">Get Tala</h2>
-          <p>Tala 1.3.0 is available for Apple silicon Macs and Linux x86-64. This release adds Taglish mode, a smaller default model, and optional live review on macOS.</p>
-          <p><a href="https://github.com/Ajtn05/Tala/releases/tag/v1.3.0">See what’s new in Tala 1.3.0</a></p>
+          <p>Tala 1.4.0 brings the meeting notebook and editable recaps to Apple silicon Macs. Local transcription is also available through the Linux x86-64 CLI.</p>
+          <p><a href="https://github.com/Ajtn05/Tala/releases/tag/v1.4.0">See what’s new in Tala 1.4.0</a></p>
         </div>
         <div class="download-actions">
           <a class="button primary" href="https://github.com/Ajtn05/Tala/releases/latest/download/Tala.dmg">Download for macOS</a>
@@ -185,7 +202,7 @@
             <li><strong>Install Tala.</strong> On macOS 14.2 or later, open the disk image, drag Tala into Applications, and open it from there.</li>
             <li><strong>Approve Tala if macOS blocks it.</strong> After trying to open Tala, go to <strong>System Settings → Privacy &amp; Security</strong>, scroll to <strong>Security</strong>, and choose <strong>Open Anyway</strong>. Confirm when prompted. <a href="https://support.apple.com/en-ph/102445">See Apple’s instructions</a>.</li>
             <li><strong>Set up transcription.</strong> In <strong>Settings → Transcription models</strong>, download <strong>Everyday &amp; Live</strong> (about 574 MB) or choose an existing supported model.</li>
-            <li><strong>Start a recording.</strong> Open <strong>New transcription</strong> and choose an audio source. Allow audio and Documents access when macOS asks.</li>
+            <li><strong>Start a recording.</strong> Open <strong>New transcription</strong> and choose an audio source, or use <strong>Start meeting</strong> to open the notebook. Allow audio and Documents access when macOS asks.</li>
           </ol>
         </article>
         <article>

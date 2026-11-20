@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -48,6 +49,10 @@ type cleanupRuntime struct {
 }
 
 func startCleanupRuntime(ctx context.Context, executable, model string) (*cleanupRuntime, error) {
+	return startLocalRuntime(ctx, executable, model, 2048)
+}
+
+func startLocalRuntime(ctx context.Context, executable, model string, contextSize int) (*cleanupRuntime, error) {
 	// A private Unix socket keeps transcript requests inside the app and
 	// avoids exposing an HTTP port or picking a port that another app can bind.
 	dir, err := os.MkdirTemp("/tmp", "tala-cleanup-")
@@ -57,7 +62,7 @@ func startCleanupRuntime(ctx context.Context, executable, model string) (*cleanu
 	socket := filepath.Join(dir, "review.sock")
 	ctx, cancel := context.WithCancel(ctx)
 	cmd := exec.CommandContext(ctx, executable, "--model", model, "--host", socket,
-		"--offline", "--no-webui", "--reasoning", "off", "--ctx-size", "2048", "--parallel", "1", "--threads", "2")
+		"--offline", "--no-webui", "--reasoning", "off", "--ctx-size", strconv.Itoa(contextSize), "--parallel", "1", "--threads", "2")
 	cmd.Env = make([]string, 0, len(os.Environ()))
 	for _, entry := range os.Environ() {
 		if !strings.HasPrefix(entry, "LLAMA_") {

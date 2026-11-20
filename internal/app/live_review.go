@@ -17,7 +17,7 @@ const reviewActive = "Local transcript review"
 
 func (c *Controller) ConfigureLiveReview(enabled bool, modelID string) error {
 	spec, ok := models.LookupReview(modelID)
-	if !ok {
+	if modelID != "" && !ok {
 		return errors.New("choose a live review model")
 	}
 	c.settingsMu.Lock()
@@ -30,7 +30,7 @@ func (c *Controller) ConfigureLiveReview(enabled bool, modelID string) error {
 	if enabled && modelID == models.CleanupID && cleanupExecutable(c.Models.Exe) == "" {
 		return errors.New("contextual cleanup requires the bundled Tala app")
 	}
-	if enabled && c.modelStates[modelID].Path == "" {
+	if enabled && modelID != "" && c.modelStates[modelID].Path == "" {
 		return fmt.Errorf("download %s before enabling live review", spec.Name)
 	}
 	settings := c.Models.Settings()
@@ -149,7 +149,10 @@ func (c *Controller) startLiveReview(ctx context.Context, id string, primary mod
 	if c.headless || !settings.LiveReview || ctx.Err() != nil {
 		return nil
 	}
-	status := c.ModelStateFor(settings.ReviewModelID())
+	status := primary
+	if reviewID := settings.ReviewModelID(primary.ID); reviewID != primary.ID {
+		status = c.ModelStateFor(reviewID)
+	}
 	if status.Path == "" {
 		c.setReviewStatus(id, "Download the live review model in Settings")
 		return nil
@@ -333,6 +336,9 @@ func (c *Controller) ResolveReviewSuggestion(id, segment string, accept bool) er
 	text, err := c.Store.ResolveSuggestion(id, segment, accept)
 	if err == nil {
 		c.Emit("reviewSuggestion", suggestionEvent{ID: id, Segment: segment, Text: text, Accepted: accept})
+		if accept {
+			c.emitCurrentMeeting(id)
+		}
 	}
 	return err
 }
@@ -346,6 +352,7 @@ func (c *Controller) CorrectSegment(id, segment string, text *string) error {
 			ID, Segment string
 			Text        *string
 		}{id, segment, text})
+		c.emitCurrentMeeting(id)
 	}
 	return err
 }

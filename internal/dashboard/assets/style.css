@@ -932,6 +932,16 @@ progress::-webkit-progress-value {
   align-items: flex-start;
   margin: 10px 0 14px;
 }
+#back-from-transcript {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+#back-from-transcript .icon {
+  width: 16px;
+  height: 16px;
+}
 .session-heading h1 {
   overflow-wrap: anywhere;
 }
@@ -1885,8 +1895,18 @@ progress::-webkit-progress-value {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
-.model-file-settings { margin-top: 14px; }
-.model-file-settings summary { cursor: pointer; font-size: 12px; }
+.model-file-settings, .meeting-prompt-settings { margin-top: 14px; }
+.model-file-settings summary, .meeting-prompt-settings summary { cursor: pointer; font-size: 12px; }
+.meeting-prompt-settings > p { margin-top: 12px; }
+.meeting-prompt-options {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  margin: -12px 0 15px;
+}
+.meeting-prompt-options p { margin: 0; }
 .model-picker {
   display: inline-flex;
   align-items: center;
@@ -1913,4 +1933,104 @@ progress::-webkit-progress-value {
 @media (max-width: 620px) {
   .record-bar .model-picker { grid-column: 1 / -1; }
   .model-preferences { display: block; }
+}
+
+/* The notebook is the main workspace; the transcript is supporting material. */
+.meeting-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 20px 0;
+}
+.meeting-entry h2 { font-size: 14px; }
+.meeting-entry p { color: var(--muted); font-size: 12px; margin-top: 4px; max-width: 65ch; }
+.meeting-entry > button { flex-shrink: 0; }
+.session-page { max-width: 920px; }
+.session-page .session-heading { margin-bottom: 8px; }
+.session-page .session-meta { font-size: 11px; line-height: 1.5; margin-bottom: 6px; white-space: pre-line; }
+.session-page .session-actions { gap: 12px; margin-bottom: 16px; }
+.session-page .session-actions button { padding: 4px 0; border: 0; font-size: 11px; background: transparent; color: var(--muted); }
+.session-page .session-actions button.danger { color: var(--danger); }
+.session-page .live-notice { background: transparent; padding: 6px 0; border: 0; margin-bottom: 10px; font-size: 11px; }
+.session-page .live-notice > button { font-size: 11px; padding: 5px 9px; }
+.meeting-layout { display: flex; flex-direction: column; gap: 30px; }
+.meeting-notebook, .meeting-transcript { min-width: 0; }
+.notebook-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; border-bottom: 1px solid var(--line); }
+.notebook-toolbar > .primary { font-size: 12px; margin-bottom: 12px; }
+.notebook-tabs { display: flex; align-self: stretch; gap: 22px; }
+.notebook-tabs > button { padding: 12px 0 15px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--muted); font-size: 14px; white-space: nowrap; }
+.notebook-tabs > button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); font-weight: 650; }
+.notebook-canvas { padding-top: 16px; }
+.notebook-preview-control { display: flex; justify-content: flex-end; margin-bottom: 8px; }
+.notebook-preview-control > button { font-size: 12px; }
+#meeting-notes, #enhanced-meeting-notes {
+  display: block;
+  width: 100%;
+  min-height: max(360px, calc(100vh - 400px));
+  resize: vertical;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  padding: 16px 8px;
+  font-size: 17px;
+  line-height: 1.9;
+}
+#meeting-notes::placeholder { color: var(--muted); font-size: 16px; }
+#meeting-notes:focus-visible, #enhanced-meeting-notes:focus-visible { outline-offset: 0; }
+.notebook-save-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-top: 12px; }
+.notebook-save-row > button, .enhanced-note-actions > button { font-size: 12px; flex-shrink: 0; }
+.meeting-status { min-height: 18px; color: var(--muted); font-size: 11px; line-height: 1.7; }
+.enhancement-status { margin-top: 10px; }
+.enhanced-note-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 18px; }
+.enhanced-note-actions > p { flex: 1; min-width: 180px; }
+.meeting-summary { min-height: 340px; white-space: normal; overflow-wrap: anywhere; overflow-x: auto; font-size: 16px; line-height: 1.9; padding: 8px; -webkit-user-select: text; user-select: text; }
+.meeting-summary.is-empty { color: var(--muted); font-size: 15px; padding-top: 30px; }
+.meeting-summary :is(h2, h3, h4, h5, h6) { margin: 25px 0 10px; }
+.meeting-summary h2 { font-size: 21px; }
+.meeting-summary h3 { font-size: 17px; }
+.meeting-summary :is(h4, h5, h6) { font-size: 15px; }
+.meeting-summary > :first-child { margin-top: 0; }
+.meeting-summary p + p { margin-top: 12px; }
+.meeting-summary :is(ol, ul) { padding-left: 24px; margin: 10px 0 20px; }
+.meeting-summary li + li { margin-top: 6px; }
+.meeting-summary li > :is(ol, ul) { margin: 6px 0 10px; }
+.meeting-summary .notebook-task { list-style: none; }
+.notebook-task > input, .notebook-task > p > input { margin: 0 6px 0 -20px; }
+.meeting-summary a { color: var(--accent); text-underline-offset: 0.18em; }
+.meeting-summary blockquote { margin: 16px 0; padding: 4px 14px; border-left: 3px solid var(--line); color: var(--muted); }
+.meeting-summary code { font-family: ui-monospace, monospace; font-size: 0.88em; }
+.meeting-summary :not(pre) > code { padding: 2px 5px; border-radius: 4px; background: var(--soft); }
+.meeting-summary pre { margin: 14px 0; padding: 12px; border-radius: 8px; background: var(--soft); line-height: 1.55; overflow-x: auto; }
+.meeting-summary table { margin: 16px 0; border-collapse: collapse; font-size: 0.92em; }
+.meeting-summary :is(th, td) { border: 1px solid var(--line); padding: 6px 12px; }
+.meeting-summary th { background: var(--soft); }
+.meeting-summary hr { border: 0; border-top: 1px solid var(--line); margin: 20px 0; }
+.meeting-share, .meeting-setup { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.meeting-share > button, .meeting-setup > button, #cancel-meeting-summary { font-size: 12px; }
+#cancel-meeting-summary { margin-top: 12px; }
+.meeting-transcript { border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; background: var(--soft); }
+.transcript-drawer-heading { display: flex; justify-content: space-between; align-items: center; gap: 18px; }
+.transcript-drawer-heading h2 { font-size: 13px; }
+.transcript-drawer-heading p { color: var(--muted); font-size: 11px; margin-top: 3px; }
+.transcript-drawer-heading > button { flex-shrink: 0; font-size: 12px; }
+.meeting-transcript .viewer-toolbar { position: static; background: transparent; margin: 16px 0 20px; }
+.meeting-transcript .viewer-toolbar input[type="search"] { flex: 1; min-width: 140px; background: var(--bg); }
+#transcript-scroll { max-height: 440px; overflow: auto; overscroll-behavior: contain; padding: 0 10px 0 0; scroll-padding-top: 8px; }
+.meeting-transcript .transcript { max-width: 70ch; }
+.transcript-tools { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; border-top: 1px solid var(--line); margin-top: 16px; padding-top: 14px; }
+.transcript-tools .export-controls { flex-wrap: wrap; }
+@media (max-width: 700px) {
+  .notebook-tabs { gap: 14px; }
+  .notebook-tabs > button { font-size: 12px; }
+  .notebook-toolbar { gap: 12px; flex-wrap: wrap; }
+  .notebook-toolbar > .primary { margin-bottom: 12px; }
+  .meeting-transcript { padding: 14px; }
+  #meeting-notes, #enhanced-meeting-notes { min-height: 320px; font-size: 16px; }
+}
+@media (max-width: 600px) {
+  .meeting-entry { padding: 16px 4px 0; align-items: flex-start; gap: 12px; }
+  .meeting-entry p { font-size: 11px; }
+  .meeting-share > button { flex: 1; }
+  .notebook-save-row { align-items: flex-start; }
 }

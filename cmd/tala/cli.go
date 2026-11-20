@@ -47,10 +47,18 @@ func parseOptions(args []string, stderr io.Writer) (options, error) {
 	f.Usage = func() {
 		fmt.Fprintln(stderr, "Usage: tala [options] [FILE_OR_URL ...]\n\nTranscribe locally on macOS or Linux. Without a command, open the macOS dashboard.\nPut options before positional inputs. Recognition flags affect this invocation only.")
 		f.PrintDefaults()
+		fmt.Fprintln(stderr, "\nWhisper models for --model-id (download sizes)")
+		for _, model := range models.Catalog() {
+			defaultLabel := ""
+			if model.ID == models.DefaultID {
+				defaultLabel = " · release default"
+			}
+			fmt.Fprintf(stderr, "  %-18s %s (%.0f MiB)%s\n    %s\n", model.ID, model.Name, float64(model.Bytes)/(1<<20), defaultLabel, model.Description)
+		}
 	}
 	f.BoolVar(&o.checkDependencies, "check-dependencies", false, "Report FFmpeg, ffprobe and yt-dlp availability as JSON")
 	f.BoolVar(&o.checkModel, "check-model", false, "Verify an existing model without downloading")
-	f.BoolVar(&o.ensureModel, "ensure-model", false, "Verify a model; download only if none exists")
+	f.BoolVar(&o.ensureModel, "ensure-model", false, "Verify or download the selected Whisper model")
 	f.Var(&o.input, "transcribe", "Transcribe FILE_OR_URL without the dashboard (repeatable)")
 	f.StringVar(&o.start, "start", "", "Start at seconds, MM:SS, or HH:MM:SS (imports only)")
 	f.StringVar(&o.end, "end", "", "Stop at this source timestamp (blank: media end; imports only)")
@@ -60,7 +68,7 @@ func parseOptions(args []string, stderr io.Writer) (options, error) {
 	f.StringVar(&o.progress, "progress", "auto", "Progress on stderr: auto (terminal bar/plain log lines), always (bar), or never")
 	f.StringVar(&o.output, "output", "", "Directory for saved sessions (TALA_OUTPUT_DIR overrides the platform default)")
 	f.StringVar(&o.model, "model", "", "Existing supported Whisper GGML model path")
-	f.StringVar(&o.modelID, "model-id", "", "Installed or downloadable model: large-v3-turbo, large-v3-turbo-q5, large-v3, small-q5")
+	f.StringVar(&o.modelID, "model-id", "", "Use a specific Whisper model (see choices below)")
 	f.StringVar(&o.language, "language", "", "taglish, auto, en, or tl (uses the saved setting when set, otherwise taglish)")
 	f.StringVar(&o.prompt, "prompt", "", "Vocabulary/context hint (not rewriting instructions; overrides saved hint)")
 	f.BoolVar(&o.skipQuiet, "skip-quiet-imports", false, "Skip nearly silent import windows (overrides the saved setting)")

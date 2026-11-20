@@ -93,6 +93,12 @@ func TestLocalReviewSavesAnExplicitSuggestionAfterDraft(t *testing.T) {
 func TestLocalReviewRequiresInstalledModel(t *testing.T) {
 	t.Setenv("TALA_DATA_DIR", t.TempDir())
 	c := controller(t)
+	if err := c.ConfigureLiveReview(true, ""); err != nil {
+		t.Fatalf("could not enable review using the recording model: %v", err)
+	}
+	if settings := c.Models.Settings(); !settings.LiveReview || settings.ReviewModelID("large-v3") != "large-v3" {
+		t.Fatalf("review did not follow the recording model: %+v", settings)
+	}
 	if err := c.ConfigureLiveReview(true, models.RecommendedID); err == nil || !strings.Contains(err.Error(), "download") {
 		t.Fatalf("enabled review without a model: %v", err)
 	}
@@ -100,7 +106,7 @@ func TestLocalReviewRequiresInstalledModel(t *testing.T) {
 	if err := c.ConfigureLiveReview(true, "small-q5"); err != nil {
 		t.Fatal(err)
 	}
-	if settings := c.Models.Settings(); !settings.LiveReview || settings.ReviewModelID() != "small-q5" {
+	if settings := c.Models.Settings(); !settings.LiveReview || settings.ReviewModelID("large-v3") != "small-q5" {
 		t.Fatalf("live review model was not saved: %+v", settings)
 	}
 }

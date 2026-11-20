@@ -300,6 +300,19 @@ figcaption { margin-top: .75rem; color: var(--muted); font-size: .8rem; }
 }
 
 .feature-overview { grid-template-columns: minmax(0, .82fr) minmax(0, 1fr); }
+.meeting-feature {
+  display: grid;
+  grid-template-columns: minmax(0, .72fr) minmax(0, 1.28fr);
+  align-items: center;
+  gap: clamp(1.4rem, 3.3vw, 3.1rem);
+  margin-bottom: clamp(3rem, 6vw, 5rem);
+  padding: clamp(1.35rem, 4vw, 3.25rem);
+  border-radius: 1.6rem;
+  background: var(--sky);
+}
+.meeting-copy h2 { text-wrap: initial; }
+.meeting-copy p { max-width: 48ch; margin-top: .85rem; color: var(--muted); }
+.meeting-guide { display: inline-block; margin-top: 1.15rem; font-weight: 800; }
 .feature-list { margin-top: 1.6rem; }
 .feature-list article { border-top: 1px solid var(--line); padding-block: .8rem; }
 .feature-list article:last-child { padding-bottom: 0; }
@@ -386,7 +399,7 @@ code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size
 }
 
 @media (max-width: 48rem) {
-  .introduction, .feature-overview { grid-template-columns: minmax(0, 1fr); }
+  .introduction, .feature-overview, .meeting-feature { grid-template-columns: minmax(0, 1fr); }
   .introduction { gap: 2rem; }
   h1 { max-width: 14ch; }
   .class-preview { max-width: 38rem; }

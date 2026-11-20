@@ -20,11 +20,16 @@ type modelInventory struct {
 }
 
 func (c *Controller) modelInventoryLocked() modelInventory {
-	return modelInventory{Statuses: c.modelStates, Busy: !c.modelScanDone || c.modelBusy, Download: c.modelDownload}
+	statuses := make(map[string]models.Status, len(c.modelStates))
+	for id, status := range c.modelStates {
+		statuses[id] = status
+	}
+	return modelInventory{Statuses: statuses, Busy: !c.modelScanDone || c.modelBusy, Download: c.modelDownload}
 }
 
 func (c *Controller) emitModelsLocked() {
 	c.emitLocked("modelInventory", c.modelInventoryLocked())
+	c.emitLocked("meetingSummary", c.meetingSummaryLocked())
 }
 
 func (c *Controller) scanModels(settings models.Settings) map[string]models.Status {
@@ -111,7 +116,7 @@ func (c *Controller) Configure(s models.Settings) error {
 		return errors.New("choose Taglish, automatic, English, or Filipino")
 	}
 	c.mu.Lock()
-	if c.live.Active || c.activeJob != "" || c.modelBusy {
+	if c.live.Active || c.activeJob != "" || c.modelBusy || c.summaryID != "" {
 		c.mu.Unlock()
 		return errors.New("wait for active work before changing settings")
 	}
@@ -122,6 +127,8 @@ func (c *Controller) Configure(s models.Settings) error {
 	// Model preferences have their own controls, so a recognition save cannot overwrite them.
 	s.DefaultModel, s.AskModel = old.DefaultModel, old.AskModel
 	s.LiveReview, s.LiveReviewModel = old.LiveReview, old.LiveReviewModel
+	s.MeetingProvider, s.MeetingModel, s.MeetingAccount = old.MeetingProvider, old.MeetingModel, old.MeetingAccount
+	s.MeetingPrompts = old.MeetingPrompts
 	pathsChanged := old.ModelPath != s.ModelPath || old.ModelDir != s.ModelDir
 	if s.ModelPath != old.ModelPath && s.ModelPath != "" {
 		model, err := c.Models.IdentifyPath(c.ctx, s.ModelPath)
@@ -177,7 +184,7 @@ func (c *Controller) DownloadModel(id string) error {
 		return errors.New("contextual cleanup requires the bundled Tala app")
 	}
 	c.mu.Lock()
-	if !c.modelScanDone || c.modelBusy {
+	if !c.modelScanDone || c.modelBusy || c.summaryID != "" {
 		c.mu.Unlock()
 		return errors.New("another model operation is in progress")
 	}
@@ -227,7 +234,7 @@ func (c *Controller) RemoveModel(id string) error {
 	c.settingsMu.Lock()
 	defer c.settingsMu.Unlock()
 	c.mu.Lock()
-	if c.modelBusy || c.live.Active || c.activeJob != "" {
+	if c.modelBusy || c.live.Active || c.activeJob != "" || c.summaryID != "" {
 		c.mu.Unlock()
 		return errors.New("wait for active work before removing a model")
 	}

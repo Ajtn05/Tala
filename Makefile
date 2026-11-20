@@ -15,7 +15,7 @@ export MACOSX_DEPLOYMENT_TARGET := 14.2
 export CGO_LDFLAGS += -framework Foundation -framework Metal -framework MetalKit -framework Accelerate -framework CoreAudio -framework AudioToolbox -framework AudioUnit -framework CoreServices
 endif
 
-.PHONY: build setup test test-ui bundle package
+.PHONY: build setup test test-ui test-summary bundle package
 build:
 	$(GO) build -o tala ./cmd/tala
 
@@ -27,6 +27,9 @@ test:
 
 test-ui:
 	node --test internal/dashboard/tests/*.test.cjs
+
+test-summary:
+	$(GO) test ./internal/app -run '^TestMeetingLocalSummaryIntegration$$' -count=1 -v
 
 bundle: build
 	TALA_GO="$(GO)" bash scripts/bundle.sh

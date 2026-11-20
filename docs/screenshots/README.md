@@ -1,7 +1,12 @@
 # Dashboard screenshots
 
-These screenshots show Tala 2.2.0's bundled HTML, CSS, fonts, and JavaScript rendered in WebKit at twice the display resolution. The native bridge is replaced with a sample-data fixture for capture. The sessions, transcript text, and transfer statistics are illustrative, rather than recorded transcription or benchmark results. No product styles were changed for the screenshots.
+These screenshots render Tala’s bundled dashboard at twice the display resolution. A sample-data fixture supplies the sessions, transcript text, notes, and transfer statistics.
+
+- [Meeting recording](meeting-recording.png) shows the Markdown preview while the transcript runs in the background. Evergreen in dark appearance, captured in Chromium at 1000 × 1000 logical pixels.
+- [Enhanced notes](meeting-enhanced.png) shows the separate editable recap and Markdown export. Iris in light appearance, captured in Chromium at 1000 × 930 logical pixels.
+
+Earlier dashboard screenshots were captured in WebKit.
 
 - [Home](home.png): recording controls, file/link entry, download progress, and recent sessions. Slate in light appearance; 1100 × 800 logical pixels.
 - [Transcript](transcript.png): source timestamps, a saved correction, search, and export controls. Evergreen in dark appearance; 1100 × 900 logical pixels.
-- [Import](import.png): fetched link details, editable transcript name, and selected time range. Iris in light appearance; 1100 × 960 logical pixels.
+- [Import](import.png) shows fetched link details, an editable transcript name, and the selected time range. Iris in light appearance at 1100 × 897 logical pixels.

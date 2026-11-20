@@ -71,36 +71,48 @@ type Live struct {
 	Review    string     `json:"review,omitempty"`
 }
 type Controller struct {
-	mu            sync.Mutex
-	cond          *sync.Cond
-	Store         *session.Store
-	Models        models.Manager
-	engineMu      sync.Mutex
-	engine        *transcriber.Transcriber
-	enginePath    string
-	tensorMode    string
-	Model         models.Status
-	live          Live
-	liveCancel    context.CancelFunc
-	liveDone      chan struct{}
-	jobs          []Job
-	cancelJob     context.CancelFunc
-	activeJob     string
-	ctx           context.Context
-	cancel        context.CancelFunc
-	wake          chan struct{}
-	Events        chan Event
-	workerDone    chan struct{}
-	resync        bool
-	modelBusy     bool
-	modelScanDone bool
-	modelStates   map[string]models.Status
-	modelDownload modelTransfer
-	settingsMu    sync.Mutex
-	editsMu       sync.Mutex
-	recognition   *models.Settings
-	headless      bool
-	ownedJobs     map[string]bool
+	mu              sync.Mutex
+	cond            *sync.Cond
+	Store           *session.Store
+	Models          models.Manager
+	engineMu        sync.Mutex
+	engine          *transcriber.Transcriber
+	enginePath      string
+	tensorMode      string
+	Model           models.Status
+	live            Live
+	liveCancel      context.CancelFunc
+	liveDone        chan struct{}
+	jobs            []Job
+	cancelJob       context.CancelFunc
+	activeJob       string
+	ctx             context.Context
+	cancel          context.CancelFunc
+	wake            chan struct{}
+	Events          chan Event
+	workerDone      chan struct{}
+	resync          bool
+	modelBusy       bool
+	modelScanDone   bool
+	modelStates     map[string]models.Status
+	modelDownload   modelTransfer
+	settingsMu      sync.Mutex
+	editsMu         sync.Mutex
+	recognition     *models.Settings
+	headless        bool
+	ownedJobs       map[string]bool
+	summaryID       string
+	summaryCancel   context.CancelFunc
+	summaryDone     chan struct{}
+	summaryGenerate func(context.Context, session.Session) (string, error)
+	meetingTarget   meetingTarget
+	meetingKeys     meetingKeyStore
+	meetingKeyReady map[string]bool
+	chatGPT         *chatGPTPlan
+	chatGPTAccounts []chatGPTAccount
+	chatGPTLimited  map[string]bool
+	chatGPTCancel   context.CancelFunc
+	chatGPTDone     chan struct{}
 }
 
 func New(output string) (*Controller, error) { return newController(output, models.Default()) }
@@ -146,6 +158,9 @@ func newControllerWithOptions(output string, manager models.Manager, recognition
 			}
 		}
 	}
+	if !c.headless {
+		c.loadMeetingProviders()
+	}
 	go c.worker()
 	go c.Discover()
 	c.signal()
@@ -190,6 +205,8 @@ func (c *Controller) Snapshot() any {
 	live, model, tensorAcceleration := c.live, c.Model, c.tensorMode
 	jobs := append([]Job{}, c.jobs...)
 	modelState := c.modelInventoryLocked()
+	meetingSummary := c.meetingSummaryLocked()
+	meetingProviders := c.meetingProvidersLocked()
 	c.mu.Unlock()
 	items, e := c.Store.List()
 	if e != nil {
@@ -197,8 +214,12 @@ func (c *Controller) Snapshot() any {
 	}
 	snapshot := map[string]any{
 		"live": live, "model": model, "modelCatalog": models.Catalog(), "modelInventory": modelState, "jobs": jobs, "sessions": items,
-		"settings": c.Models.Settings(), "dependencies": media.Dependencies(), "output": c.Store.Dir,
-		"tensorAcceleration": tensorAcceleration,
+		"defaultModelId": models.DefaultID,
+		"settings":       c.Models.Settings(), "dependencies": media.Dependencies(), "output": c.Store.Dir,
+		"tensorAcceleration":    tensorAcceleration,
+		"meetingSummary":        meetingSummary,
+		"meetingProviders":      meetingProviders,
+		"meetingPromptDefaults": meetingPromptDefaults,
 	}
 	if !c.headless && cleanupExecutable(c.Models.Exe) != "" {
 		snapshot["cleanupModel"] = models.CleanupModel()
@@ -293,8 +314,22 @@ func (c *Controller) SetMode(mode audio.Mode) error {
 func (c *Controller) Start() error { return c.StartWithModel("") }
 
 func (c *Controller) StartWithModel(id string) error {
+	return c.startWithModel(id, false)
+}
+
+func (c *Controller) StartMeetingWithModel(id string) error {
+	return c.startWithModel(id, true)
+}
+
+func (c *Controller) startWithModel(id string, meeting bool) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.ctx.Err() != nil {
+		return c.ctx.Err()
+	}
+	if c.summaryID != "" {
+		return errors.New("wait for meeting notes to finish or cancel generation before recording")
+	}
 	if c.live.Active {
 		return errors.New("a recording is already active")
 	}
@@ -305,15 +340,23 @@ func (c *Controller) StartWithModel(id string) error {
 	if err != nil {
 		return err
 	}
-	source := []string{"Microphone + System Audio", "Microphone", "System Audio"}[c.live.Mode]
-	v, e := c.Store.CreateWithModel("live", "Recording · "+time.Now().Format("Jan 2, 3:04 PM"), source, model.ID)
+	mode := c.live.Mode
+	kind, title := "live", "Recording · "+time.Now().Format("Jan 2, 3:04 PM")
+	if meeting {
+		kind, title = "meeting", "Meeting · "+time.Now().Format("Jan 2, 3:04 PM")
+		if runtime.GOOS == "darwin" {
+			mode = audio.ModeBoth
+		}
+	}
+	source := []string{"Microphone + System Audio", "Microphone", "System Audio"}[mode]
+	v, e := c.Store.CreateWithModel(kind, title, source, model.ID)
 	if e != nil {
 		return e
 	}
 	ctx, cancel := context.WithCancel(c.ctx)
 	c.liveCancel = cancel
 	c.liveDone = make(chan struct{})
-	c.live = Live{Active: true, State: "loading", Mode: c.live.Mode, ModelID: model.ID, SessionID: v.ID, Started: time.Now()}
+	c.live = Live{Active: true, State: "loading", Mode: mode, ModelID: model.ID, SessionID: v.ID, Started: time.Now()}
 	c.emitLocked("live", c.live)
 	c.emitLocked("sessions", nil)
 	go c.runLive(ctx, v.ID, c.live.Mode, model, c.liveDone)
@@ -655,7 +698,7 @@ func (c *Controller) worker() {
 		}
 		for {
 			c.mu.Lock()
-			if !c.modelScanDone || c.modelBusy && c.modelDownload.ID == "" {
+			if !c.modelScanDone || c.summaryID != "" || c.modelBusy && c.modelDownload.ID == "" {
 				c.mu.Unlock()
 				break
 			}
@@ -965,6 +1008,9 @@ func (c *Controller) SetMenuBarIcon(enabled bool) error {
 func (c *Controller) Delete(id string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.summaryID == id {
+		return errors.New("cancel meeting note generation before deleting this session")
+	}
 	if c.live.Active && c.live.SessionID == id {
 		return errors.New("stop recording before deleting this session")
 	}
@@ -984,9 +1030,17 @@ func (c *Controller) Close() {
 	}
 	c.cond.Broadcast()
 	done := c.liveDone
+	summaryDone := c.summaryDone
+	chatGPTDone := c.chatGPTDone
 	c.mu.Unlock()
 	if done != nil {
 		<-done
+	}
+	if summaryDone != nil {
+		<-summaryDone
+	}
+	if chatGPTDone != nil {
+		<-chatGPTDone
 	}
 	<-c.workerDone
 	c.engineMu.Lock()

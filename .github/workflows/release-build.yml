@@ -53,12 +53,20 @@ jobs:
             icon="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$contents/Info.plist")"
             iconutil -c iconset -o "$RUNNER_TEMP/Tala.iconset" "$contents/Resources/$icon"
             codesign --verify --deep --strict "$root/Tala.app"
+            "$tools/llama-server" --version
           else
             tar -xzf dist/tala-linux-x86_64.tar.gz -C "$root"
             tala="$root/tala"
             tools="$root/tala-tools"
           fi
           "$tala" --help
+          TALA_DATA_DIR="$(mktemp -d "$RUNNER_TEMP/tala-model.XXXXXX")" python3 - "$tala" <<'PY'
+          import json, subprocess, sys
+          check = subprocess.run([sys.argv[1], "--check-model"], capture_output=True, text=True)
+          assert check.returncode == 1, check
+          model = json.loads(check.stdout)
+          assert model["id"] == "large-v3-turbo-q5" and model["state"] == "missing", model
+          PY
           TALA_DATA_DIR="$RUNNER_TEMP/tala-data" TALA_OUTPUT_DIR="$RUNNER_TEMP/tala-sessions" "$tala" --list
           PATH=/usr/bin:/bin "$tala" --check-dependencies | python3 -c '
           import json, os, sys

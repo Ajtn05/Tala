@@ -45,6 +45,7 @@ type Session struct {
 	Preview     string            `json:"preview"`
 	Corrections map[string]string `json:"corrections"`
 	Suggestions map[string]string `json:"suggestions,omitempty"`
+	Meeting     *Meeting          `json:"meeting,omitempty"`
 	Segments    []Segment         `json:"segments,omitempty"`
 	LegacyPath  string            `json:"legacyPath,omitempty"`
 }
@@ -88,6 +89,9 @@ func (s *Store) CreateWithModel(kind, title, source, modelID string) (Session, e
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	v := Session{ID: ID(), ModelID: modelID, Title: title, Created: time.Now(), Type: kind, Source: source, Status: "processing", Corrections: map[string]string{}}
+	if kind == "meeting" {
+		v.Meeting = &Meeting{}
+	}
 	return v, s.save(v)
 }
 func (s *Store) read(id string, segments bool) (Session, error) {
@@ -128,6 +132,7 @@ func (s *Store) read(id string, segments bool) (Session, error) {
 			return v, err
 		}
 		sort.SliceStable(v.Segments, func(i, j int) bool { return v.Segments[i].Start < v.Segments[j].Start })
+		markMeetingStale(&v)
 	}
 	return v, nil
 }
@@ -227,6 +232,10 @@ func (s *Store) Correct(id, segID string, text *string) error {
 		v.Corrections[segID] = *text
 	}
 	delete(v.Suggestions, segID)
+	markMeetingStale(&v)
+	if v.Meeting != nil {
+		v.Meeting.Revision++
+	}
 	return s.save(v)
 }
 
@@ -252,7 +261,7 @@ func (s *Store) Suggest(id, segID, text string) (bool, error) {
 func (s *Store) ResolveSuggestion(id, segID string, accept bool) (*string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	v, err := s.read(id, false)
+	v, err := s.read(id, true)
 	if err != nil {
 		return nil, err
 	}
@@ -263,6 +272,10 @@ func (s *Store) ResolveSuggestion(id, segID string, accept bool) (*string, error
 	delete(v.Suggestions, segID)
 	if accept {
 		v.Corrections[segID] = text
+		markMeetingStale(&v)
+		if v.Meeting != nil {
+			v.Meeting.Revision++
+		}
 	}
 	if err := s.save(v); err != nil {
 		return nil, err
@@ -327,6 +340,12 @@ func Clock(seconds float64, sub bool) string {
 	return fmt.Sprintf("%02d:%02d", m, s)
 }
 func Export(v Session, format, mode string) (string, error) {
+	if mode == "meeting" {
+		return ExportMeeting(v, format)
+	}
+	if mode == "meeting-original" {
+		return ExportOriginalMeetingNotes(v, format)
+	}
 	var b strings.Builder
 	sub := format == "srt" || format == "vtt"
 	if format == "vtt" {

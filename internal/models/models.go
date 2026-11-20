@@ -40,16 +40,16 @@ type Model struct {
 }
 
 var catalog = []Model{
-	{RecommendedID, "Whisper Large v3 Turbo Q5", "Everyday & live", "A smaller download for live recordings and everyday transcription.", 574041195, "ggml-large-v3-turbo-q5_0.bin", "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2"},
-	{FullTurboID, "Whisper Large v3 Turbo", "Full Turbo", "The original Turbo model for multilingual recording and imports.", 1624555275, Name, SHA256},
-	{"large-v3", "Whisper Large v3", "Higher accuracy", "For difficult recordings, including Filipino and Taglish. Takes longer to process.", 3095033483, "ggml-large-v3.bin", "64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2"},
-	{"small-q5", "Whisper Small Q5", "Low memory", "For machines with limited memory. Difficult speech may need more corrections.", 190085487, "ggml-small-q5_1.bin", "ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb"},
+	{RecommendedID, "Whisper Large v3 Turbo Q5", "Everyday & live", "Balances speed and memory for recording and everyday imports. Reduced precision can cost accuracy on difficult speech.", 574041195, "ggml-large-v3-turbo-q5_0.bin", "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2"},
+	{FullTurboID, "Whisper Large v3 Turbo", "Full Turbo", "Keeps Turbo’s original weights. Try it if Turbo Q5 misses words in your audio. It needs more memory and almost triples the download size.", 1624555275, Name, SHA256},
+	{"large-v3", "Whisper Large v3", "Higher accuracy", "Try it for noisy audio or difficult Filipino and Taglish imports. It needs the most memory of the Whisper choices and can take longer to process.", 3095033483, "ggml-large-v3.bin", "64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2"},
+	{"small-q5", "Whisper Small Q5", "Low memory", "Uses the least memory and disk space of the Whisper choices. Expect more corrections with noisy audio or mixed-language speech.", 190085487, "ggml-small-q5_1.bin", "ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb"},
 }
 
 func Catalog() []Model { return append([]Model(nil), catalog...) }
 
 func CleanupModel() Model {
-	return Model{CleanupID, "Qwen3.5 4B Q4", "Contextual cleanup", "Propose transcript corrections using recent dialogue.",
+	return Model{CleanupID, "Qwen3.5 4B Q4", "Text review & meeting notes", "Uses transcript text to suggest wording and punctuation or enhance meeting notes. It can misread context or suggest details that were never spoken.",
 		2783446368, "qwen3.5-4b-Q4_K_M.gguf", "c3c2cf023efdbd913c2363a14d5c7266db5e05c4602f1c0790eaed567d8aff23"}
 }
 
@@ -86,24 +86,33 @@ func ValidLanguage(language string) bool {
 }
 
 type Settings struct {
-	DefaultModel     string        `json:"defaultModel,omitempty"`
-	AskModel         bool          `json:"askModel,omitempty"`
-	ModelPath        string        `json:"modelPath"`
-	ModelDir         string        `json:"modelDir"`
-	Language         string        `json:"language"`
-	Prompt           string        `json:"prompt"`
-	SkipQuietImports bool          `json:"skipQuietImports,omitempty"`
-	LiveReview       bool          `json:"liveReview,omitempty"`
-	LiveReviewModel  string        `json:"liveReviewModel,omitempty"`
-	MenuBarIcon      bool          `json:"menuBarIcon"`
-	URLAuth          media.URLAuth `json:"urlAuth,omitempty"`
+	DefaultModel     string         `json:"defaultModel,omitempty"`
+	AskModel         bool           `json:"askModel,omitempty"`
+	ModelPath        string         `json:"modelPath"`
+	ModelDir         string         `json:"modelDir"`
+	Language         string         `json:"language"`
+	Prompt           string         `json:"prompt"`
+	SkipQuietImports bool           `json:"skipQuietImports,omitempty"`
+	LiveReview       bool           `json:"liveReview,omitempty"`
+	LiveReviewModel  string         `json:"liveReviewModel,omitempty"`
+	MeetingProvider  string         `json:"meetingProvider,omitempty"`
+	MeetingModel     string         `json:"meetingModel,omitempty"`
+	MeetingAccount   string         `json:"meetingAccount,omitempty"`
+	MeetingPrompts   MeetingPrompts `json:"meetingPrompts,omitzero"`
+	MenuBarIcon      bool           `json:"menuBarIcon"`
+	URLAuth          media.URLAuth  `json:"urlAuth,omitempty"`
 }
 
-func (s Settings) ReviewModelID() string {
+type MeetingPrompts struct {
+	Summary     string `json:"summary,omitempty"`
+	Enhancement string `json:"enhancement,omitempty"`
+}
+
+func (s Settings) ReviewModelID(recordingModelID string) string {
 	if _, ok := LookupReview(s.LiveReviewModel); ok {
 		return s.LiveReviewModel
 	}
-	return RecommendedID
+	return recordingModelID
 }
 
 type Status struct {
