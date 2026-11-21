@@ -28,11 +28,15 @@ func TestMeetingLocalSummaryIntegration(t *testing.T) {
 		{Text: "Mira will send the launch checklist by Friday.", Start: 4, End: 7, Source: "Microphone"},
 		{Text: "We have not approved the budget.", Start: 8, End: 10, Source: "System Audio"},
 	}}
-	summary, err := enhanceMeeting(ctx, v, func(ctx context.Context, source string) (noteEnhancement, error) {
-		return meetingCompletion(runtime.completeMeeting).enhanceNotes(ctx, enhancementInstructions, source)
-	})
+	var preview string
+	summary, err := enhanceMeeting(ctx, v, func(ctx context.Context, source string, onPartial func(noteEnhancement)) (noteEnhancement, error) {
+		return meetingCompletion(runtime.completeMeeting).enhanceNotes(ctx, enhancementInstructions, source, onPartial)
+	}, func(markdown string) { preview = markdown })
 	if err != nil {
 		t.Fatal(err)
+	}
+	if preview == "" || preview != summary {
+		t.Fatalf("preview did not reach the final notes: %s", preview)
 	}
 	lower := strings.ToLower(summary)
 	for _, want := range []string{"## Budget first", "- Budget: check status, huwag muna mag-assume.", "## Project Cedar launch", "cedar", "wednesday", "mira", "checklist", "friday"} {

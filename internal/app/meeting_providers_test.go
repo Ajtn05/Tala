@@ -3,11 +3,13 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"tala/internal/models"
 	"tala/internal/session"
@@ -17,24 +19,54 @@ type meetingTestTransport func(*http.Request) (*http.Response, error)
 
 func (f meetingTestTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
+func meetingTestEvent(body any) string {
+	data, _ := json.Marshal(body)
+	return "data: " + string(data) + "\n\n"
+}
+
+func chatMeetingTestEvent(text, finish string) string {
+	return meetingTestEvent(map[string]any{"choices": []any{map[string]any{
+		"finish_reason": finish, "delta": map[string]string{"content": text},
+	}}})
+}
+
+func geminiMeetingTestEvent(text, finish string) string {
+	return meetingTestEvent(map[string]any{"candidates": []any{map[string]any{
+		"finishReason": finish, "content": map[string]any{"parts": []any{
+			map[string]any{"text": "internal reasoning", "thought": true},
+			map[string]any{"text": text},
+		}},
+	}}})
+}
+
+func claudeMeetingTestDelta(kind, text string) string {
+	return meetingTestEvent(map[string]any{"type": "content_block_delta", "delta": map[string]string{"type": kind, "text": text}})
+}
+
 func TestHostedMeetingProviderProtocols(t *testing.T) {
 	for _, tc := range []struct {
 		provider, host, path, keyHeader, keyValue, schemaField, output string
 	}{
-		{"gemini", "generativelanguage.googleapis.com", "/v1beta/models/test-model:generateContent", "x-goog-api-key", "test-key", "responseJsonSchema",
-			`{"candidates":[{"finishReason":"STOP","content":{"parts":[{"text":"reasoning","thought":true},{"text":"{}"}]}}]}`},
+		{"gemini", "generativelanguage.googleapis.com", "/v1beta/models/test-model:streamGenerateContent", "x-goog-api-key", "test-key", "responseJsonSchema",
+			geminiMeetingTestEvent(`{"overview":"First"`, "") + geminiMeetingTestEvent(`}`, "STOP")},
 		{"openai", "api.openai.com", "/v1/chat/completions", "Authorization", "Bearer test-key", "response_format",
-			`{"choices":[{"finish_reason":"stop","message":{"content":"{}"}}]}`},
+			chatMeetingTestEvent(`{"overview":"First"`, "") + chatMeetingTestEvent(`}`, "") + chatMeetingTestEvent("", "stop")},
 		{"anthropic", "api.anthropic.com", "/v1/messages", "x-api-key", "test-key", "output_config",
-			`{"stop_reason":"end_turn","content":[{"type":"thinking"},{"type":"text","text":"{}"}]}`},
+			claudeMeetingTestDelta("thinking_delta", "internal reasoning") +
+				claudeMeetingTestDelta("text_delta", `{"overview":"First"`) + claudeMeetingTestDelta("text_delta", `}`) +
+				"data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\ndata: {\"type\":\"message_stop\"}\n\n"},
 	} {
 		t.Run(tc.provider, func(t *testing.T) {
 			status, output := http.StatusOK, tc.output
 			client := &http.Client{Transport: meetingTestTransport(func(r *http.Request) (*http.Response, error) {
-				if r.Method != http.MethodPost || r.URL.Scheme != "https" || r.URL.Host != tc.host || r.URL.Path != tc.path || r.URL.RawQuery != "" {
+				query := ""
+				if tc.provider == "gemini" {
+					query = "alt=sse"
+				}
+				if r.Method != http.MethodPost || r.URL.Scheme != "https" || r.URL.Host != tc.host || r.URL.Path != tc.path || r.URL.RawQuery != query {
 					t.Errorf("unexpected provider target: %s %s", r.Method, r.URL)
 				}
-				if r.Header.Get(tc.keyHeader) != tc.keyValue || r.Header.Get("Content-Type") != "application/json" {
+				if r.Header.Get(tc.keyHeader) != tc.keyValue || r.Header.Get("Content-Type") != "application/json" || r.Header.Get("Accept") != "text/event-stream" {
 					t.Error("request headers did not match the provider protocol")
 				}
 				if tc.provider == "anthropic" && r.Header.Get("anthropic-version") != "2023-06-01" {
@@ -53,20 +85,105 @@ func TestHostedMeetingProviderProtocols(t *testing.T) {
 				if strings.Contains(body, "test-key") || strings.Contains(body, "maxLength") {
 					t.Error("provider body included a credential or unsupported schema constraint")
 				}
+				if tc.provider != "gemini" && !strings.Contains(body, `"stream":true`) {
+					t.Error("request did not enable streaming")
+				}
 				return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(output))}, nil
 			})}
 			complete := cloudMeetingCompletion(client, meetingTarget{Provider: tc.provider, Model: "test-model"}, "test-key")
-			got, err := complete(context.Background(), "notes", "system instructions", "source transcript", meetingDigestSchema())
-			if err != nil || got != "{}" {
+			var previews []string
+			got, err := complete(context.Background(), "notes", "system instructions", "source transcript", meetingDigestSchema(), func(text string) { previews = append(previews, text) })
+			if err != nil || got != `{"overview":"First"}` || len(previews) != 2 || previews[0] != `{"overview":"First"` {
 				t.Fatalf("completion = %q, %v", got, err)
 			}
 			status, output = http.StatusTooManyRequests, "secret echoed by provider"
-			_, err = complete(context.Background(), "notes", "system instructions", "source transcript", meetingDigestSchema())
+			_, err = complete(context.Background(), "notes", "system instructions", "source transcript", meetingDigestSchema(), nil)
 			if err == nil || !strings.Contains(err.Error(), "quota") || strings.Contains(err.Error(), output) {
 				t.Fatalf("quota failure was not sanitized: %v", err)
 			}
 		})
 	}
+}
+
+func TestMeetingPreviewIsGroundedTemporaryAndClearedOnCancellation(t *testing.T) {
+	t.Setenv("TALA_DATA_DIR", t.TempDir())
+	c, meeting := meetingController(t)
+	c.meetingKeys, c.meetingKeyReady = testMeetingKeys{}, map[string]bool{}
+	if _, err := c.ConfigureMeetingProvider("openai", "test-model", "test-key", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Store.Append(meeting.ID, session.Segment{Text: "Launch is Wednesday."}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.SaveMeetingNotes(meeting.ID, "Launch date?"); err != nil {
+		t.Fatal(err)
+	}
+	source, err := c.Store.Get(meeting.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Store.SaveMeetingSummary(meeting.ID, "Previous recap", "old-model", session.MeetingFingerprint(source)); err != nil {
+		t.Fatal(err)
+	}
+	previous := meetingCloudClient
+	t.Cleanup(func() { meetingCloudClient = previous })
+	body, writer := io.Pipe()
+	defer body.Close()
+	defer writer.Close()
+	meetingCloudClient = &http.Client{Transport: meetingTestTransport(func(r *http.Request) (*http.Response, error) {
+		go func() {
+			<-r.Context().Done()
+			writer.CloseWithError(r.Context().Err())
+		}()
+		return &http.Response{StatusCode: http.StatusOK, Body: body}, nil
+	})}
+	const partial = `{"additions":[{"afterLine":0,"text":"Friday","evidence":"Launch is Friday."},{"afterLine":0,"text":"Wednesday","evidence":"Launch is Wednesday."},{"afterLine":0,"text":"still typing`
+	go func() { _, _ = io.WriteString(writer, chatMeetingTestEvent(partial, "")) }()
+	result := make(chan error, 1)
+	go func() {
+		_, err := c.GenerateMeetingSummary(MeetingSummaryRequest{ID: meeting.ID, Provider: "openai", Model: "test-model"})
+		result <- err
+	}()
+	deadline := time.After(5 * time.Second)
+	for preview := ""; preview == ""; {
+		select {
+		case event := <-c.Events:
+			if state, ok := event.Data.(meetingSummaryState); ok {
+				preview = state.Preview
+			}
+		case err := <-result:
+			t.Fatalf("enhancement stopped before the preview: %v", err)
+		case <-deadline:
+			t.Fatal("no live preview before stream completion")
+		}
+		if preview != "" && preview != "Launch date?\n- Wednesday" {
+			t.Fatalf("preview included incomplete or ungrounded notes: %q", preview)
+		}
+	}
+	checkSaved := func(wantPreview string) {
+		t.Helper()
+		saved, err := c.Store.Get(meeting.ID)
+		if err != nil || saved.Meeting.Summary != "Previous recap" {
+			t.Fatalf("preview overwrote saved notes: %+v, %v", saved.Meeting, err)
+		}
+		snapshot := c.Snapshot().(map[string]any)["meetingSummary"].(meetingSummaryState)
+		if snapshot.Preview != wantPreview || snapshot.Busy != (wantPreview != "") {
+			t.Fatalf("unexpected snapshot: %+v", snapshot)
+		}
+	}
+	checkSaved("Launch date?\n- Wednesday")
+	if err := c.CancelMeetingSummary(meeting.ID); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("enhancement did not cancel: %v", err)
+		}
+	case <-deadline:
+		t.Fatal("enhancement did not exit after cancellation")
+	}
+	checkSaved("")
 }
 
 func TestGeminiRetriesOnlyServiceUnavailable(t *testing.T) {
@@ -108,11 +225,11 @@ func TestGeminiRetriesOnlyServiceUnavailable(t *testing.T) {
 				return &http.Response{
 					StatusCode: tc.statuses[calls-1],
 					Header:     http.Header{"Retry-After": {tc.retryAfter}},
-					Body:       io.NopCloser(strings.NewReader(`{"candidates":[{"finishReason":"STOP","content":{"parts":[{"text":"{}"}]}}]}`)),
+					Body:       io.NopCloser(strings.NewReader(geminiMeetingTestEvent("{}", "STOP"))),
 				}, nil
 			})}
 			complete := cloudMeetingCompletion(client, meetingTarget{Provider: "gemini", Model: "gemini-3.8-flash"}, "test-key")
-			result, err := complete(ctx, "notes", "instructions", "transcript", meetingDigestSchema())
+			result, err := complete(ctx, "notes", "instructions", "transcript", meetingDigestSchema(), nil)
 			if calls != tc.calls {
 				t.Fatalf("made %d requests, want %d", calls, tc.calls)
 			}
@@ -189,10 +306,8 @@ func TestHostedMeetingRequiresMatchingProviderAndKeepsKeysOutOfSettings(t *testi
 			request.Messages[1].Role != "user" || !strings.Contains(request.Messages[1].Content, "Ship on Wednesday.") {
 			t.Errorf("instructions and evidence were not sent separately: %+v", request.Messages)
 		}
-		result, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{
-			"finish_reason": "stop", "message": map[string]string{"content": wantContent},
-		}}})
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(string(result)))}, nil
+		result := chatMeetingTestEvent(wantContent, "stop")
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(result))}, nil
 	})}
 	request := MeetingSummaryRequest{ID: meeting.ID, Provider: "openai", Model: c.meetingTarget.Model}
 	if result, err := c.GenerateMeetingSummary(request); err != nil || !strings.Contains(result.Summary, "- Fifth") {
@@ -255,16 +370,8 @@ func TestGeminiSavesNotesFromLongTranscriptAndReportsIncompleteResponse(t *testi
 		if strings.Contains(string(body), `"maxItems"`) {
 			t.Error("Gemini received a fixed item limit from the default summary schema")
 		}
-		payload, _ := json.Marshal(map[string]any{
-			"candidates": []any{map[string]any{
-				"finishReason": finish, "content": map[string]any{"parts": []any{
-					map[string]any{"text": "Internal reasoning", "thought": true},
-					map[string]any{"text": strings.Repeat(" ", 6000) + digest},
-				}},
-			}},
-			"usageMetadata": map[string]int{"totalTokenCount": 8200},
-		})
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(string(payload)))}, nil
+		payload := geminiMeetingTestEvent(strings.Repeat(" ", 6000)+digest, finish)
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(payload))}, nil
 	})}
 	request := MeetingSummaryRequest{ID: meeting.ID, Provider: "gemini", Model: model}
 	result, err := c.GenerateMeetingSummary(request)

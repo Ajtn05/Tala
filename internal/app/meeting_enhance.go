@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -103,7 +104,7 @@ func sourceNoteBlocks(notes string) []sourceNoteBlock {
 	return blocks
 }
 
-func enhanceMeeting(ctx context.Context, v session.Session, generate func(context.Context, string) (noteEnhancement, error)) (string, error) {
+func enhanceMeeting(ctx context.Context, v session.Session, generate func(context.Context, string, func(noteEnhancement)) (noteEnhancement, error), preview func(string)) (string, error) {
 	notes := ""
 	if v.Meeting != nil {
 		notes = v.Meeting.Notes
@@ -117,48 +118,74 @@ func enhanceMeeting(ctx context.Context, v session.Session, generate func(contex
 	if strings.TrimSpace(evidence) == "" {
 		return notes, nil
 	}
-	var additions []noteAddition
-	var extras []extraNoteFact
+	var committed noteEnhancement
 	seen := map[string]bool{}
-	key := func(text string) string { return strings.ToLower(strings.Join(strings.Fields(text), " ")) }
+	parts := splitMeetingEvidence(evidence, meetingChunkBytes)
 	for _, block := range sourceNoteBlocks(notes) {
 		blockJSON, _ := json.Marshal(block)
 		allowed := map[int]bool{}
 		for _, line := range block.Lines {
 			allowed[line.Line] = true
 		}
-		for _, part := range splitMeetingEvidence(evidence, meetingChunkBytes) {
+		for _, part := range parts {
 			if err := ctx.Err(); err != nil {
 				return "", err
 			}
 			prompt := "Original note lines (keep their wording and structure):\n" + string(blockJSON) + "\n\nTranscript evidence:\n" + part
-			result, err := generate(ctx, prompt)
+			var onPartial func(noteEnhancement)
+			if preview != nil {
+				onPartial = func(result noteEnhancement) {
+					draft, _ := collectNoteEnhancement(committed, result, allowed, part, maps.Clone(seen), false)
+					if len(draft.Additions)+len(draft.Extras) > 0 {
+						preview(renderEnhancedNotes(notes, draft.Additions, draft.Extras))
+					}
+				}
+			}
+			result, err := generate(ctx, prompt, onPartial)
 			if err != nil {
 				return "", err
 			}
-			for _, addition := range result.Additions {
-				if !allowed[addition.AfterLine] || strings.TrimSpace(addition.Text) == "" || strings.TrimSpace(addition.Evidence) == "" || !strings.Contains(part, addition.Evidence) {
-					return "", errors.New("the model returned a note addition without matching transcript evidence. Try again or choose another model")
-				}
-				identity := fmt.Sprintf("%d\x00%s", addition.AfterLine, key(addition.Text))
-				if !seen[identity] {
-					seen[identity] = true
-					additions = append(additions, addition)
-				}
-			}
-			for _, fact := range result.Extras {
-				if strings.TrimSpace(fact.Text) == "" || strings.TrimSpace(fact.Evidence) == "" || !strings.Contains(part, fact.Evidence) {
-					return "", errors.New("the model returned a decision or action without matching transcript evidence. Try again or choose another model")
-				}
-				identity := "extra\x00" + key(fact.Text)
-				if !seen[identity] {
-					seen[identity] = true
-					extras = append(extras, fact)
-				}
+			committed, err = collectNoteEnhancement(committed, result, allowed, part, seen, true)
+			if err != nil {
+				return "", err
 			}
 		}
 	}
-	return renderEnhancedNotes(notes, additions, extras), nil
+	return renderEnhancedNotes(notes, committed.Additions, committed.Extras), nil
+}
+
+func collectNoteEnhancement(notes, incoming noteEnhancement, allowed map[int]bool, transcript string, seen map[string]bool, requireEvidence bool) (noteEnhancement, error) {
+	hasEvidence := func(text, quote string) bool {
+		return strings.TrimSpace(text) != "" && strings.TrimSpace(quote) != "" && strings.Contains(transcript, quote)
+	}
+	key := func(text string) string { return strings.ToLower(strings.Join(strings.Fields(text), " ")) }
+	for _, addition := range incoming.Additions {
+		if !allowed[addition.AfterLine] || !hasEvidence(addition.Text, addition.Evidence) {
+			if requireEvidence {
+				return noteEnhancement{}, errors.New("the model returned a note addition without matching transcript evidence. Try again or choose another model")
+			}
+			continue
+		}
+		identity := fmt.Sprintf("%d\x00%s", addition.AfterLine, key(addition.Text))
+		if !seen[identity] {
+			seen[identity] = true
+			notes.Additions = append(notes.Additions, addition)
+		}
+	}
+	for _, fact := range incoming.Extras {
+		if !hasEvidence(fact.Text, fact.Evidence) {
+			if requireEvidence {
+				return noteEnhancement{}, errors.New("the model returned a decision or action without matching transcript evidence. Try again or choose another model")
+			}
+			continue
+		}
+		identity := "extra\x00" + key(fact.Text)
+		if !seen[identity] {
+			seen[identity] = true
+			notes.Extras = append(notes.Extras, fact)
+		}
+	}
+	return notes, nil
 }
 
 func renderEnhancedNotes(notes string, additions []noteAddition, extras []extraNoteFact) string {
@@ -203,7 +230,7 @@ func renderEnhancedNotes(notes string, additions []noteAddition, extras []extraN
 	return b.String()
 }
 
-func (complete meetingCompletion) enhanceNotes(ctx context.Context, instructions, evidence string) (noteEnhancement, error) {
+func (complete meetingCompletion) enhanceNotes(ctx context.Context, instructions, evidence string, preview func(noteEnhancement)) (noteEnhancement, error) {
 	var result noteEnhancement
 	text := map[string]any{"type": "string"}
 	schema := map[string]any{
@@ -219,7 +246,7 @@ func (complete meetingCompletion) enhanceNotes(ctx context.Context, instructions
 			}},
 		},
 	}
-	content, err := complete(ctx, "enhanced_notes", instructions, evidence, schema)
+	content, err := complete(ctx, "enhanced_notes", instructions, evidence, schema, meetingJSONPreview(preview))
 	if err != nil {
 		return result, err
 	}

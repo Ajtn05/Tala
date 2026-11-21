@@ -17,7 +17,7 @@ func TestEnhancementKeepsUserOutlineWordingOrderAndNegation(t *testing.T) {
 	v := session.Session{Meeting: &session.Meeting{Notes: notes}, Segments: []session.Segment{
 		{Text: "We decided to launch Project Cedar on Wednesday. Budget is not approved. Mira will send the checklist by Friday.", Start: 1, End: 8},
 	}}
-	enhanced, err := enhanceMeeting(context.Background(), v, func(_ context.Context, prompt string) (noteEnhancement, error) {
+	enhanced, err := enhanceMeeting(context.Background(), v, func(_ context.Context, prompt string, _ func(noteEnhancement)) (noteEnhancement, error) {
 		block := enhancementPromptBlock(t, prompt)
 		result := noteEnhancement{}
 		for _, line := range block.Lines {
@@ -30,7 +30,7 @@ func TestEnhancementKeepsUserOutlineWordingOrderAndNegation(t *testing.T) {
 		}
 		result.Extras = []extraNoteFact{{Text: "Mira will send the checklist by Friday.", Evidence: "Mira will send the checklist by Friday."}}
 		return result, nil
-	})
+	}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ func TestEnhancementCarriesNotesFocusThroughEveryTranscriptChunk(t *testing.T) {
 	evidence := strings.Repeat("Background discussion. ", 900) + "TAIL customer concern remains unresolved."
 	v := session.Session{Meeting: &session.Meeting{Notes: notes}, Segments: []session.Segment{{Text: evidence, End: 60}}}
 	calls, sawTail := 0, false
-	enhanced, err := enhanceMeeting(context.Background(), v, func(_ context.Context, prompt string) (noteEnhancement, error) {
+	enhanced, err := enhanceMeeting(context.Background(), v, func(_ context.Context, prompt string, _ func(noteEnhancement)) (noteEnhancement, error) {
 		calls++
 		if !strings.Contains(prompt, "Keep the customer concern, not just launch dates.") || !strings.Contains(prompt, "My priority") {
 			t.Error("source notes focus absent from a transcript chunk")
@@ -79,7 +79,7 @@ func TestEnhancementCarriesNotesFocusThroughEveryTranscriptChunk(t *testing.T) {
 			return noteEnhancement{Additions: []noteAddition{{AfterLine: 1, Text: "Customer concern remains unresolved.", Evidence: "TAIL customer concern remains unresolved."}}}, nil
 		}
 		return noteEnhancement{}, nil
-	})
+	}, nil)
 	if err != nil || calls < 3 || !sawTail || !strings.Contains(enhanced, "Customer concern remains unresolved.") {
 		t.Fatalf("long transcript evidence or notes focus lost: calls=%d tail=%v text=%q err=%v", calls, sawTail, enhanced, err)
 	}
@@ -115,10 +115,10 @@ func TestEnhancementUsesEveryNoteBlockWithEveryTranscriptChunk(t *testing.T) {
 	chunks := splitMeetingEvidence(meetingEvidence(transcript), meetingChunkBytes)
 	blocks := sourceNoteBlocks(notes)
 	seen := map[string]bool{}
-	result, err := enhanceMeeting(context.Background(), v, func(_ context.Context, prompt string) (noteEnhancement, error) {
+	result, err := enhanceMeeting(context.Background(), v, func(_ context.Context, prompt string, _ func(noteEnhancement)) (noteEnhancement, error) {
 		seen[prompt] = true
 		return noteEnhancement{}, nil
-	})
+	}, nil)
 	if err != nil || result != notes {
 		t.Fatalf("source notes changed: %v", err)
 	}
@@ -164,13 +164,13 @@ func TestEnhancementKeepsLargeGroundedResponses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	complete := meetingCompletion(func(context.Context, string, string, string, map[string]any) (string, error) {
+	complete := meetingCompletion(func(context.Context, string, string, string, map[string]any, func(string)) (string, error) {
 		return string(body), nil
 	})
 	v := session.Session{Meeting: &session.Meeting{Notes: "Release checklists"}, Segments: []session.Segment{{Text: strings.Join(quotes, " ")}}}
-	result, err := enhanceMeeting(context.Background(), v, func(ctx context.Context, source string) (noteEnhancement, error) {
-		return complete.enhanceNotes(ctx, "List every checklist commitment.", source)
-	})
+	result, err := enhanceMeeting(context.Background(), v, func(ctx context.Context, source string, onPartial func(noteEnhancement)) (noteEnhancement, error) {
+		return complete.enhanceNotes(ctx, "List every checklist commitment.", source, onPartial)
+	}, nil)
 	if err != nil || strings.Count(result, "\n- Mira committed") != len(quotes) || !strings.HasSuffix(result, "week 100.") {
 		t.Fatalf("large enhancement lost additions: %d bytes, %v", len(result), err)
 	}
@@ -179,12 +179,12 @@ func TestEnhancementKeepsLargeGroundedResponses(t *testing.T) {
 func TestEnhancementCanClarifyAnUncertainNoteWithoutReplacingIt(t *testing.T) {
 	const notes = "## Budget\n- budget approved?"
 	v := session.Session{Meeting: &session.Meeting{Notes: notes}, Segments: []session.Segment{{Text: "The budget was not approved.", End: 1}}}
-	text, err := enhanceMeeting(context.Background(), v, func(_ context.Context, prompt string) (noteEnhancement, error) {
+	text, err := enhanceMeeting(context.Background(), v, func(_ context.Context, prompt string, _ func(noteEnhancement)) (noteEnhancement, error) {
 		if !strings.Contains(prompt, "budget approved?") {
 			t.Error("the original uncertain note was not provided")
 		}
 		return noteEnhancement{Additions: []noteAddition{{AfterLine: 1, Text: "Clarification: the budget was not approved.", Evidence: "The budget was not approved."}}}, nil
-	})
+	}, nil)
 	if err != nil || !strings.Contains(text, "- budget approved?\n  - Clarification: the budget was not approved.") || v.Meeting.Notes != notes {
 		t.Fatalf("clarification replaced or changed source uncertainty: %q %v", text, err)
 	}
@@ -196,9 +196,9 @@ func TestEnhancementRejectsUnsupportedFactsAndWrongNoteIdentifiers(t *testing.T)
 		{AfterLine: 3, Text: "Launch Wednesday.", Evidence: "Launch Wednesday."},
 		{AfterLine: 0, Text: "Launch Friday.", Evidence: "Launch Friday."},
 	} {
-		if _, err := enhanceMeeting(context.Background(), v, func(context.Context, string) (noteEnhancement, error) {
+		if _, err := enhanceMeeting(context.Background(), v, func(context.Context, string, func(noteEnhancement)) (noteEnhancement, error) {
 			return noteEnhancement{Additions: []noteAddition{addition}}, nil
-		}); err == nil {
+		}, nil); err == nil {
 			t.Fatalf("accepted unsupported addition: %+v", addition)
 		}
 	}
@@ -207,10 +207,10 @@ func TestEnhancementRejectsUnsupportedFactsAndWrongNoteIdentifiers(t *testing.T)
 func TestEnhancementWithoutTranscriptKeepsNotesExactly(t *testing.T) {
 	const notes = "## Budget\nNo approval yet.\n\nKeep this wording.\n"
 	called := false
-	result, err := enhanceMeeting(context.Background(), session.Session{Meeting: &session.Meeting{Notes: notes}}, func(context.Context, string) (noteEnhancement, error) {
+	result, err := enhanceMeeting(context.Background(), session.Session{Meeting: &session.Meeting{Notes: notes}}, func(context.Context, string, func(noteEnhancement)) (noteEnhancement, error) {
 		called = true
 		return noteEnhancement{}, errors.New("must not invent details")
-	})
+	}, nil)
 	if err != nil || called || result != notes {
 		t.Fatalf("notes without evidence changed: %q %v", result, err)
 	}

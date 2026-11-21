@@ -102,6 +102,8 @@ type Controller struct {
 	headless        bool
 	ownedJobs       map[string]bool
 	summaryID       string
+	summaryPreview  string
+	summaryRevision uint64
 	summaryCancel   context.CancelFunc
 	summaryDone     chan struct{}
 	summaryGenerate func(context.Context, session.Session) (string, error)

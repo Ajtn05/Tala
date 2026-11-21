@@ -1,7 +1,6 @@
 package app
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -9,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 )
 
 func (p *chatGPTPlan) listModels(ctx context.Context, accessToken string) ([]chatGPTModel, error) {
@@ -56,7 +54,7 @@ func (p *chatGPTPlan) listModels(ctx context.Context, accessToken string) ([]cha
 }
 
 func (p *chatGPTPlan) complete(client *http.Client, target meetingTarget) meetingCompletion {
-	return func(ctx context.Context, name, instructions, evidence string, schema map[string]any) (string, error) {
+	return func(ctx context.Context, name, instructions, evidence string, schema map[string]any, preview func(string)) (string, error) {
 		accessToken, err := p.accessToken(ctx, target.Account)
 		if err != nil {
 			return "", err
@@ -89,9 +87,12 @@ func (p *chatGPTPlan) complete(client *http.Client, target meetingTarget) meetin
 		if res.StatusCode != http.StatusOK {
 			return "", chatGPTHTTPError(res)
 		}
-		content, err := readChatGPTStream(res.Body)
+		content, err := readMeetingStream(res.Body, chatGPTMeetingEvent, preview)
 		if ctx.Err() != nil {
 			return "", ctx.Err()
+		}
+		if errors.Is(err, errIncompleteMeeting) {
+			return "", errors.New("the ChatGPT response ended before enhancement completed")
 		}
 		return content, err
 	}
@@ -132,53 +133,27 @@ func chatGPTHTTPError(res *http.Response) error {
 	return chatGPTServiceError(body.Error.Code, res.StatusCode)
 }
 
-func readChatGPTStream(r io.Reader) (string, error) {
-	const maxEventBytes = 512 * 1024
-	scanner := bufio.NewScanner(io.LimitReader(r, 8*1024*1024))
-	scanner.Buffer(make([]byte, 4096), maxEventBytes)
-	var data, output strings.Builder
-	for scanner.Scan() {
-		line := scanner.Text()
-		if field, ok := strings.CutPrefix(line, "data:"); ok {
-			if data.Len()+len(field)+1 > maxEventBytes {
-				return "", errors.New("ChatGPT returned an oversized response")
-			}
-			data.WriteString(strings.TrimPrefix(field, " "))
-			data.WriteByte('\n')
-			continue
-		}
-		if line != "" || data.Len() == 0 {
-			continue
-		}
-		var event struct {
-			Type, Delta, Code string
-			Response          struct {
-				Error struct{ Code string }
-			}
-		}
-		body := data.String()
-		data.Reset()
-		if strings.TrimSpace(body) == "[DONE]" {
-			break
-		}
-		if err := json.Unmarshal([]byte(body), &event); err != nil {
-			return "", errors.New("ChatGPT returned an invalid response stream")
-		}
-		switch event.Type {
-		case "response.output_text.delta":
-			output.WriteString(event.Delta)
-		case "response.completed":
-			if strings.TrimSpace(output.String()) != "" {
-				return output.String(), nil
-			}
-			return "", errors.New("ChatGPT completed the request without returning meeting notes")
-		case "response.failed":
-			return "", chatGPTServiceError(event.Response.Error.Code, 0)
-		case "error":
-			return "", chatGPTServiceError(event.Code, 0)
-		case "response.incomplete", "response.refusal.done":
-			return "", errors.New("ChatGPT returned an incomplete enhancement. Try again or choose another model")
+func chatGPTMeetingEvent(body []byte) (string, bool, error) {
+	var event struct {
+		Type, Delta, Code string
+		Response          struct {
+			Error struct{ Code string }
 		}
 	}
-	return "", errors.New("the ChatGPT response ended before enhancement completed")
+	if json.Unmarshal(body, &event) != nil {
+		return "", false, errors.New("ChatGPT returned an invalid response stream")
+	}
+	switch event.Type {
+	case "response.output_text.delta":
+		return event.Delta, false, nil
+	case "response.completed":
+		return "", true, nil
+	case "response.failed":
+		return "", false, chatGPTServiceError(event.Response.Error.Code, 0)
+	case "error":
+		return "", false, chatGPTServiceError(event.Code, 0)
+	case "response.incomplete", "response.refusal.done":
+		return "", false, errors.New("ChatGPT returned an incomplete enhancement. Try again or choose another model")
+	}
+	return "", false, nil
 }

@@ -34,7 +34,7 @@ Tala is free, open source, and runs **Whisper locally** on macOS and Linux. Afte
 - **Choose how to enhance.** Run Qwen3.5 4B Q4 on your Mac, connect an eligible ChatGPT plan, or use a Google Gemini, OpenAI, or Anthropic Claude API key. Tala asks before sending notes and transcript text to a hosted provider.
 - **Set your own instructions.** Customize one prompt for extending your notes and another for creating a recap from an empty notebook.
 
-[Meeting notes guide](docs/meetings.md) · [1.4.0 release notes](docs/releases/v1.4.0.md)
+[Meeting notes guide](docs/meetings.md) · [1.4.1 release notes](docs/releases/v1.4.1.md) · [1.4.0 release notes](docs/releases/v1.4.0.md)
 
 ## What you can do
 

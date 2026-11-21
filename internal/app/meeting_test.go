@@ -147,7 +147,7 @@ func TestMeetingChunksKeepBoundaryFactsAndValidUTF8(t *testing.T) {
 func TestMeetingReductionKeepsEveryDecisionAndAction(t *testing.T) {
 	evidence := strings.Repeat("Meeting evidence. ", 900) + "TAIL_MARKER"
 	maps, reductions := 0, 0
-	text, err := summarizeMeeting(context.Background(), evidence, meetingChunkBytes, meetingCombineContextBytes-len(meetingInstructions), func(_ context.Context, input string) (meetingDigest, error) {
+	text, err := summarizeMeeting(context.Background(), evidence, meetingChunkBytes, meetingCombineContextBytes-len(meetingInstructions), func(_ context.Context, input string, _ func(meetingDigest)) (meetingDigest, error) {
 		if strings.HasPrefix(input, "Combine") {
 			reductions++
 			return meetingDigest{Overview: "Consolidated notes"}, nil
@@ -159,7 +159,7 @@ func TestMeetingReductionKeepsEveryDecisionAndAction(t *testing.T) {
 			digest.Actions = append(digest.Actions, meetingAction{Task: fmt.Sprintf("Task %d.%d", maps, n), Owner: "Mira"})
 		}
 		return digest, nil
-	})
+	}, nil)
 	if err != nil || maps < 2 || reductions != maps-1 {
 		t.Fatalf("map/reduce did not process every part: maps=%d reductions=%d err=%v", maps, reductions, err)
 	}
@@ -175,7 +175,7 @@ func TestMeetingReductionKeepsEveryDecisionAndAction(t *testing.T) {
 func TestMeetingKeepsLargePartialSummariesWhenTheyCannotBeCombined(t *testing.T) {
 	evidence := strings.Repeat("Meeting evidence. ", 900)
 	var overviews []string
-	result, err := summarizeMeeting(context.Background(), evidence, meetingChunkBytes, meetingCombineContextBytes-len(meetingInstructions), func(_ context.Context, input string) (meetingDigest, error) {
+	result, err := summarizeMeeting(context.Background(), evidence, meetingChunkBytes, meetingCombineContextBytes-len(meetingInstructions), func(_ context.Context, input string, _ func(meetingDigest)) (meetingDigest, error) {
 		if strings.HasPrefix(input, "Combine") {
 			t.Fatal("sent a combination request larger than the input budget")
 		}
@@ -186,7 +186,7 @@ func TestMeetingKeepsLargePartialSummariesWhenTheyCannotBeCombined(t *testing.T)
 			Overview: overview, KeyPoints: []string{fmt.Sprintf("Key point %d", part)},
 			Decisions: []string{fmt.Sprintf("Decision %d", part)}, Actions: []meetingAction{{Task: fmt.Sprintf("Task %d", part)}},
 		}, nil
-	})
+	}, nil)
 	if err != nil || len(overviews) < 2 || !strings.HasPrefix(result, "## Overview\n\n"+strings.Join(overviews, "\n\n")) {
 		t.Fatalf("long overviews were lost, truncated or reordered: %d parts, %v", len(overviews), err)
 	}
@@ -238,13 +238,11 @@ func TestMeetingRuntimeRequiresCompleteStructuredOutput(t *testing.T) {
 				if strings.Contains(string(payload.ResponseFormat), `"maxLength"`) || strings.Contains(string(payload.ResponseFormat), `"maxItems"`) {
 					t.Error("empty-notebook schema still imposes a fixed length or item limit")
 				}
-				_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{
-					"finish_reason": reason, "message": map[string]string{"content": string(content)},
-				}}})
+				_, _ = fmt.Fprint(w, chatMeetingTestEvent(string(content), reason))
 			}))
 			defer server.Close()
 			runtime := &cleanupRuntime{client: &http.Client{Transport: rewriteMeetingTransport{url: server.URL}}, done: make(chan struct{})}
-			digest, err := meetingCompletion(runtime.completeMeeting).meetingDigest(context.Background(), meetingInstructions, "SOURCE_MARKER")
+			digest, err := meetingCompletion(runtime.completeMeeting).meetingDigest(context.Background(), meetingInstructions, "SOURCE_MARKER", nil)
 			if reason == "stop" && (err != nil || digest.Overview != overview || len(digest.Decisions) != 1 || len(digest.KeyPoints) != 5 || len(digest.OpenQuestions) != 3) {
 				t.Fatalf("valid summary: %+v %v", digest, err)
 			}

@@ -29,7 +29,7 @@ func (c *Controller) modelInventoryLocked() modelInventory {
 
 func (c *Controller) emitModelsLocked() {
 	c.emitLocked("modelInventory", c.modelInventoryLocked())
-	c.emitLocked("meetingSummary", c.meetingSummaryLocked())
+	c.emitMeetingSummaryLocked()
 }
 
 func (c *Controller) scanModels(settings models.Settings) map[string]models.Status {

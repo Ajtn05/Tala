@@ -8,8 +8,8 @@ The meeting workflow centers the user's written notes. Write in the notebook and
 
 1. On macOS, select a transcription model and choose **Start meeting**. This captures microphone and system audio together.
 2. Write in **Your notes** while transcription runs in the background. **Save notes** commits them to the session. Unsaved drafts remain local across navigation and restarts.
-3. Stop recording and choose **Enhance notes**. Download Qwen from the workspace if needed, or select a hosted provider in **Settings → Meeting notes**. The result opens under **Enhanced notes**.
-4. Review and edit the enhanced version, or switch back to the untouched original. Copy/export uses the version being viewed. Open the transcript drawer for verification, corrections, or transcript exports.
+3. Stop recording and choose **Enhance notes**. Download Qwen from the workspace if needed, or select a hosted provider in **Settings → Meeting notes**. Open **Enhanced notes · live** to watch complete notes appear as the model works. You can keep writing in **Your notes** while the preview updates.
+4. When enhancement finishes, review, edit, copy, or export the saved version. Canceling or an error clears the live preview and leaves the previous saved notes available. Choose **Show transcript** in the bar at the bottom of the session to review, correct, or export the transcript.
 
 The notebook also works on existing sessions, including file and URL imports. Enhancement preserves original note lines, headings, and their order, adding relevant details under those notes. With no written notes, Tala creates an overview and organizes the transcript's substantive points, decisions, actions, and open questions. The default prompt asks the model for plain text in each field, and Tala adds the headings and bullets. Failed or canceled enhancement preserves the last saved version. Changes to original notes or corrected transcript text mark an older enhancement as out of date.
 

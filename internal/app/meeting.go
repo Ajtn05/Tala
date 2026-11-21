@@ -23,6 +23,8 @@ type meetingSummaryState struct {
 	Ready        bool   `json:"ready"`
 	Busy         bool   `json:"busy"`
 	SessionID    string `json:"sessionId"`
+	Preview      string `json:"preview,omitempty"`
+	Revision     uint64 `json:"revision"`
 	Provider     string `json:"provider,omitempty"`
 	ProviderName string `json:"providerName,omitempty"`
 	Account      string `json:"account,omitempty"`
@@ -30,25 +32,31 @@ type meetingSummaryState struct {
 	UsageLimited bool   `json:"usageLimited,omitempty"`
 }
 
-func (c *Controller) meetingSummaryLocked() meetingSummaryState {
+func (c *Controller) meetingSummaryLocked() (state meetingSummaryState) {
+	state.Busy = c.summaryID != ""
+	state.SessionID, state.Preview, state.Revision = c.summaryID, c.summaryPreview, c.summaryRevision
 	if c.meetingTarget.Provider == chatGPTMeetingProvider {
 		account := c.chatGPTAccountLocked(c.meetingTarget.Account)
-		limited := c.chatGPTLimited[account.ID]
-		return meetingSummaryState{
-			Available: c.chatGPT != nil, Ready: c.chatGPTDone == nil && account.Authorized && account.hasModel(c.meetingTarget.Model) && !limited,
-			ModelID: c.meetingTarget.Model, Provider: chatGPTMeetingProvider, ProviderName: "ChatGPT",
-			Account: c.meetingTarget.Account, AccountLabel: account.Label, UsageLimited: limited,
-			Busy: c.summaryID != "", SessionID: c.summaryID,
-		}
+		state.UsageLimited = c.chatGPTLimited[account.ID]
+		state.Available = c.chatGPT != nil
+		state.Ready = c.chatGPTDone == nil && account.Authorized && account.hasModel(c.meetingTarget.Model) && !state.UsageLimited
+		state.ModelID, state.Provider, state.ProviderName = c.meetingTarget.Model, chatGPTMeetingProvider, "ChatGPT"
+		state.Account, state.AccountLabel = c.meetingTarget.Account, account.Label
+		return state
 	}
 	if provider, ok := lookupMeetingProvider(c.meetingTarget.Provider); ok {
-		return meetingSummaryState{Available: c.meetingKeys != nil, Ready: c.meetingKeyReady[provider.ID],
-			ModelID: c.meetingTarget.Model, Provider: provider.ID, ProviderName: provider.Name,
-			Busy: c.summaryID != "", SessionID: c.summaryID}
+		state.Available, state.Ready = c.meetingKeys != nil, c.meetingKeyReady[provider.ID]
+		state.ModelID, state.Provider, state.ProviderName = c.meetingTarget.Model, provider.ID, provider.Name
+		return state
 	}
-	available := !c.headless && cleanupExecutable(c.Models.Exe) != ""
-	return meetingSummaryState{Available: available, ModelID: models.CleanupID,
-		Ready: available && c.modelStates[models.CleanupID].Path != "", Busy: c.summaryID != "", SessionID: c.summaryID}
+	state.Available = !c.headless && cleanupExecutable(c.Models.Exe) != ""
+	state.ModelID, state.Ready = models.CleanupID, state.Available && c.modelStates[models.CleanupID].Path != ""
+	return state
+}
+
+func (c *Controller) emitMeetingSummaryLocked() {
+	c.summaryRevision++
+	c.emitLocked("meetingSummary", c.meetingSummaryLocked())
 }
 
 type MeetingSummaryRequest struct {
@@ -188,7 +196,7 @@ func (c *Controller) GenerateMeetingSummary(request MeetingSummaryRequest) (*ses
 	model := c.modelStates[models.CleanupID]
 	executable := cleanupExecutable(c.Models.Exe)
 	generate := c.summaryGenerate
-	c.emitLocked("meetingSummary", c.meetingSummaryLocked())
+	c.emitMeetingSummaryLocked()
 	c.mu.Unlock()
 	defer func() {
 		cancel()
@@ -203,14 +211,22 @@ func (c *Controller) GenerateMeetingSummary(request MeetingSummaryRequest) (*ses
 			c.mu.Unlock()
 		}
 		c.mu.Lock()
-		c.summaryID, c.summaryCancel, c.summaryDone = "", nil, nil
-		c.emitLocked("meetingSummary", c.meetingSummaryLocked())
+		c.summaryID, c.summaryCancel, c.summaryDone, c.summaryPreview = "", nil, nil, ""
+		c.emitMeetingSummaryLocked()
 		close(done)
 		c.mu.Unlock()
 		c.signal()
 	}()
 
 	var summary string
+	preview := func(markdown string) {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		if markdown != "" && markdown != c.summaryPreview && ctx.Err() == nil {
+			c.summaryPreview = markdown
+			c.emitMeetingSummaryLocked()
+		}
+	}
 	modelID := models.CleanupID
 	if generate != nil {
 		summary, err = generate(ctx, v)
@@ -243,9 +259,9 @@ func (c *Controller) GenerateMeetingSummary(request MeetingSummaryRequest) (*ses
 			if instructions == "" {
 				instructions = meetingPromptDefaults.Enhancement
 			}
-			summary, err = enhanceMeeting(ctx, v, func(ctx context.Context, source string) (noteEnhancement, error) {
-				return complete.enhanceNotes(ctx, instructions, source)
-			})
+			summary, err = enhanceMeeting(ctx, v, func(ctx context.Context, source string, onPartial func(noteEnhancement)) (noteEnhancement, error) {
+				return complete.enhanceNotes(ctx, instructions, source, onPartial)
+			}, preview)
 		} else {
 			instructions := prompts.Summary
 			if instructions == "" {
@@ -257,9 +273,9 @@ func (c *Controller) GenerateMeetingSummary(request MeetingSummaryRequest) (*ses
 				chunkBytes, combineContextBytes = 48*1024, 49*1024
 			}
 			combineBytes := combineContextBytes - len(instructions)
-			summary, err = summarizeMeeting(ctx, evidence, chunkBytes, combineBytes, func(ctx context.Context, source string) (meetingDigest, error) {
-				return complete.meetingDigest(ctx, instructions, source)
-			})
+			summary, err = summarizeMeeting(ctx, evidence, chunkBytes, combineBytes, func(ctx context.Context, source string, onPartial func(meetingDigest)) (meetingDigest, error) {
+				return complete.meetingDigest(ctx, instructions, source, onPartial)
+			}, preview)
 		}
 	}
 	if err != nil {
@@ -402,22 +418,14 @@ func splitMeetingEvidence(text string, chunkBytes int) []string {
 	return chunks
 }
 
-func summarizeMeeting(ctx context.Context, evidence string, chunkBytes, combineBytes int, generate func(context.Context, string) (meetingDigest, error)) (string, error) {
-	var partials []meetingDigest
+func meetingCommitments(digests []meetingDigest) ([]string, []meetingAction) {
 	var decisions []string
 	var actions []meetingAction
 	seenDecisions, seenActions := map[string]bool{}, map[string]bool{}
 	key := func(text string) string {
 		return strings.ToLower(strings.Trim(strings.Join(strings.Fields(text), " "), " .!?"))
 	}
-	for i, part := range splitMeetingEvidence(evidence, chunkBytes) {
-		if err := ctx.Err(); err != nil {
-			return "", err
-		}
-		digest, err := generate(ctx, fmt.Sprintf("Meeting evidence, part %d:\n%s", i+1, part))
-		if err != nil {
-			return "", err
-		}
+	for _, digest := range digests {
 		for _, decision := range digest.Decisions {
 			if normalized := key(decision); normalized != "" && !seenDecisions[normalized] {
 				seenDecisions[normalized] = true
@@ -431,9 +439,35 @@ func summarizeMeeting(ctx context.Context, evidence string, chunkBytes, combineB
 				actions = append(actions, action)
 			}
 		}
-		// Commitments are preserved outside the lossy summary reduction.
-		digest.Decisions, digest.Actions = nil, nil
+	}
+	return decisions, actions
+}
+
+func summarizeMeeting(ctx context.Context, evidence string, chunkBytes, combineBytes int, generate func(context.Context, string, func(meetingDigest)) (meetingDigest, error), preview func(string)) (string, error) {
+	var partials []meetingDigest
+	for i, part := range splitMeetingEvidence(evidence, chunkBytes) {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		var onPartial func(meetingDigest)
+		if preview != nil {
+			onPartial = func(digest meetingDigest) {
+				drafts := append(partials, digest)
+				decisions, actions := meetingCommitments(drafts)
+				preview(renderMeetingDigests(drafts, decisions, actions))
+			}
+		}
+		digest, err := generate(ctx, fmt.Sprintf("Meeting evidence, part %d:\n%s", i+1, part), onPartial)
+		if err != nil {
+			return "", err
+		}
 		partials = append(partials, digest)
+	}
+	// Commitments are preserved outside the lossy summary reduction. Keep the
+	// transcript-pass preview visible until the combined result is saved.
+	decisions, actions := meetingCommitments(partials)
+	for i := range partials {
+		partials[i].Decisions, partials[i].Actions = nil, nil
 	}
 	for len(partials) > 1 {
 		var next []meetingDigest
@@ -451,7 +485,7 @@ func summarizeMeeting(ctx context.Context, evidence string, chunkBytes, combineB
 				next = append(next, pair...)
 				continue
 			}
-			digest, err := generate(ctx, "Combine these partial meeting notes into one grounded set of notes:\n"+string(data))
+			digest, err := generate(ctx, "Combine these partial meeting notes into one grounded set of notes:\n"+string(data), nil)
 			if err != nil {
 				return "", err
 			}
@@ -485,9 +519,9 @@ func meetingDigestSchema() map[string]any {
 	}
 }
 
-func (complete meetingCompletion) meetingDigest(ctx context.Context, instructions, evidence string) (meetingDigest, error) {
+func (complete meetingCompletion) meetingDigest(ctx context.Context, instructions, evidence string, preview func(meetingDigest)) (meetingDigest, error) {
 	var digest meetingDigest
-	content, err := complete(ctx, "meeting_notes", instructions, "Meeting source data:\n"+evidence, meetingDigestSchema())
+	content, err := complete(ctx, "meeting_notes", instructions, "Meeting source data:\n"+evidence, meetingDigestSchema(), meetingJSONPreview(preview))
 	if err != nil {
 		return digest, err
 	}

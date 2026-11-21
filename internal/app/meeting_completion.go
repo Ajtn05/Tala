@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"math/rand/v2"
 	"net/http"
 	"strconv"
@@ -14,17 +13,17 @@ import (
 	"time"
 )
 
-type meetingCompletion func(ctx context.Context, name, instructions, evidence string, schema map[string]any) (string, error)
+type meetingCompletion func(ctx context.Context, name, instructions, evidence string, schema map[string]any, preview func(string)) (string, error)
 
-func (r *cleanupRuntime) completeMeeting(ctx context.Context, name, instructions, evidence string, schema map[string]any) (string, error) {
+func (r *cleanupRuntime) completeMeeting(ctx context.Context, name, instructions, evidence string, schema map[string]any, preview func(string)) (string, error) {
 	if err := r.ready(ctx); err != nil {
 		return "", err
 	}
 	payload := map[string]any{
-		"messages":    chatMeetingMessages(instructions, evidence),
+		"messages": chatMeetingMessages(instructions, evidence), "stream": true,
 		"temperature": 0, "max_tokens": 2048, "response_format": chatMeetingFormat(name, schema),
 	}
-	return postMeeting(ctx, r.client.Do, "http://tala.local/v1/chat/completions", "The local model", nil, payload, decodeChatMeeting)
+	return postMeeting(ctx, r.client.Do, "http://tala.local/v1/chat/completions", "The local model", nil, payload, chatMeetingEvent, preview)
 }
 
 var meetingCloudClient = &http.Client{
@@ -36,7 +35,7 @@ var meetingCloudClient = &http.Client{
 
 func cloudMeetingCompletion(client *http.Client, target meetingTarget, key string) meetingCompletion {
 	provider, _ := lookupMeetingProvider(target.Provider)
-	return func(ctx context.Context, name, instructions, evidence string, schema map[string]any) (string, error) {
+	return func(ctx context.Context, name, instructions, evidence string, schema map[string]any, preview func(string)) (string, error) {
 		switch provider.ID {
 		case "gemini":
 			config := map[string]any{
@@ -50,25 +49,25 @@ func cloudMeetingCompletion(client *http.Client, target meetingTarget, key strin
 				"contents":          []map[string]any{{"role": "user", "parts": []map[string]string{{"text": evidence}}}},
 				"generationConfig":  config,
 			}
-			endpoint := "https://generativelanguage.googleapis.com/v1beta/models/" + target.Model + ":generateContent"
+			endpoint := "https://generativelanguage.googleapis.com/v1beta/models/" + target.Model + ":streamGenerateContent?alt=sse"
 			return postMeeting(ctx, func(req *http.Request) (*http.Response, error) {
 				return sendGeminiMeeting(client, req)
-			}, endpoint, provider.Name, map[string]string{"x-goog-api-key": key}, payload, decodeGeminiMeeting)
+			}, endpoint, provider.Name, map[string]string{"x-goog-api-key": key}, payload, geminiMeetingEvent, preview)
 		case "openai":
 			payload := map[string]any{
-				"model": target.Model, "messages": chatMeetingMessages(instructions, evidence),
+				"model": target.Model, "messages": chatMeetingMessages(instructions, evidence), "stream": true,
 				"max_completion_tokens": 8192, "response_format": chatMeetingFormat(name, cloudMeetingSchema(schema)),
 			}
 			return postMeeting(ctx, client.Do, "https://api.openai.com/v1/chat/completions", provider.Name,
-				map[string]string{"Authorization": "Bearer " + key}, payload, decodeChatMeeting)
+				map[string]string{"Authorization": "Bearer " + key}, payload, chatMeetingEvent, preview)
 		case "anthropic":
 			payload := map[string]any{
-				"model": target.Model, "system": instructions, "max_tokens": 4096,
+				"model": target.Model, "system": instructions, "max_tokens": 4096, "stream": true,
 				"messages":      []map[string]string{{"role": "user", "content": evidence}},
 				"output_config": map[string]any{"format": map[string]any{"type": "json_schema", "schema": cloudMeetingSchema(schema)}},
 			}
 			return postMeeting(ctx, client.Do, "https://api.anthropic.com/v1/messages", provider.Name,
-				map[string]string{"x-api-key": key, "anthropic-version": "2023-06-01"}, payload, decodeClaudeMeeting)
+				map[string]string{"x-api-key": key, "anthropic-version": "2023-06-01"}, payload, claudeMeetingEvents(), preview)
 		default:
 			return "", errors.New("choose an available meeting notes provider")
 		}
@@ -147,7 +146,7 @@ func chatMeetingFormat(name string, schema map[string]any) map[string]any {
 	return map[string]any{"type": "json_schema", "json_schema": map[string]any{"name": name, "strict": true, "schema": schema}}
 }
 
-func postMeeting(ctx context.Context, send func(*http.Request) (*http.Response, error), endpoint, source string, headers map[string]string, payload any, decode func(io.Reader) (string, error)) (string, error) {
+func postMeeting(ctx context.Context, send func(*http.Request) (*http.Response, error), endpoint, source string, headers map[string]string, payload any, decode meetingEventDecoder, preview func(string)) (string, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return "", err
@@ -157,6 +156,7 @@ func postMeeting(ctx context.Context, send func(*http.Request) (*http.Response, 
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
 	for key, value := range headers {
 		req.Header.Set(key, value)
 	}
@@ -183,8 +183,8 @@ func postMeeting(ctx context.Context, send func(*http.Request) (*http.Response, 
 			return "", fmt.Errorf("%s failed to enhance notes (HTTP %d)", source, res.StatusCode)
 		}
 	}
-	content, err := decode(io.LimitReader(res.Body, 256*1024))
-	if err != nil || strings.TrimSpace(content) == "" {
+	content, err := readMeetingStream(res.Body, decode, preview)
+	if err != nil {
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
@@ -197,86 +197,7 @@ func postMeeting(ctx context.Context, send func(*http.Request) (*http.Response, 
 	return content, nil
 }
 
-var errIncompleteMeeting = errors.New("incomplete meeting response")
-
 // Only report known completion outcomes. Provider responses can contain meeting text.
 type meetingOutputError string
 
 func (e meetingOutputError) Error() string { return string(e) }
-
-func decodeChatMeeting(body io.Reader) (string, error) {
-	var result struct {
-		Choices []struct {
-			FinishReason string `json:"finish_reason"`
-			Message      struct{ Content, Refusal string }
-		}
-	}
-	if err := json.NewDecoder(body).Decode(&result); err != nil {
-		return "", err
-	}
-	if len(result.Choices) != 1 || result.Choices[0].FinishReason != "stop" || result.Choices[0].Message.Refusal != "" {
-		return "", errIncompleteMeeting
-	}
-	return result.Choices[0].Message.Content, nil
-}
-
-func decodeGeminiMeeting(body io.Reader) (string, error) {
-	var result struct {
-		PromptFeedback struct{ BlockReason string }
-		Candidates     []struct {
-			FinishReason string
-			Content      struct {
-				Parts []struct {
-					Text    string
-					Thought bool
-				}
-			}
-		}
-	}
-	if err := json.NewDecoder(body).Decode(&result); err != nil {
-		return "", err
-	}
-	if result.PromptFeedback.BlockReason != "" && result.PromptFeedback.BlockReason != "BLOCK_REASON_UNSPECIFIED" {
-		return "", meetingOutputError("blocked the request before generating notes. Review what was shared or choose another provider")
-	}
-	if len(result.Candidates) != 1 {
-		return "", errIncompleteMeeting
-	}
-	candidate := result.Candidates[0]
-	switch candidate.FinishReason {
-	case "STOP":
-	case "MAX_TOKENS":
-		return "", meetingOutputError("reached its output limit before finishing the notes. Try a shorter transcript or another model")
-	case "SAFETY", "RECITATION", "PROHIBITED_CONTENT", "SPII", "BLOCKLIST":
-		return "", meetingOutputError("blocked the generated notes because of its content filters. Try another provider or the local model")
-	default:
-		return "", errIncompleteMeeting
-	}
-	var text strings.Builder
-	for _, part := range candidate.Content.Parts {
-		if !part.Thought {
-			text.WriteString(part.Text)
-		}
-	}
-	return text.String(), nil
-}
-
-func decodeClaudeMeeting(body io.Reader) (string, error) {
-	var result struct {
-		StopReason string `json:"stop_reason"`
-		Content    []struct{ Type, Text string }
-	}
-	if err := json.NewDecoder(body).Decode(&result); err != nil {
-		return "", err
-	}
-	if result.StopReason != "end_turn" {
-		return "", errIncompleteMeeting
-	}
-	var text strings.Builder
-	for _, block := range result.Content {
-		if block.Type == "text" {
-			text.WriteString(block.Text)
-		}
-	}
-	return text.String(), nil
-}

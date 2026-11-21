@@ -181,8 +181,10 @@ func TestChatGPTInferenceRequiresAuthorizationAndCompletedStream(t *testing.T) {
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(output))}, nil
 	})}
 	complete := plan.complete(client, meetingTarget{Account: selected, Model: "first-model"})
+	var preview string
 	run := func() (string, error) {
-		return complete(context.Background(), "notes", "instructions", "fixture transcript", meetingDigestSchema())
+		preview = ""
+		return complete(context.Background(), "notes", "instructions", "fixture transcript", meetingDigestSchema(), func(text string) { preview = text })
 	}
 	if _, err := run(); !errors.Is(err, errChatGPTScope) || requests != 0 {
 		t.Fatalf("inference ran without permission: %v", err)
@@ -192,6 +194,9 @@ func TestChatGPTInferenceRequiresAuthorizationAndCompletedStream(t *testing.T) {
 	output = delta
 	if _, err := run(); err == nil {
 		t.Fatal("accepted text without a completed event")
+	}
+	if preview != "{}" {
+		t.Fatalf("did not deliver text from the unfinished stream: %q", preview)
 	}
 	output = delta + "data: {\"type\":\"response.failed\",\"response\":{\"error\":{\"code\":\"subscription_sharing_usage_limit_exceeded\"}}}\n\n"
 	if _, err := run(); !errors.Is(err, errChatGPTLimit) {

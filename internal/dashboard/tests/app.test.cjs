@@ -13,7 +13,7 @@ function harness({ deferActions = [], snapshot: overrides = {}, results = {}, pr
     if (!nodes.has(selector)) nodes.set(selector, {
       innerHTML: "", textContent: "", hidden: false, value: "",
       style: {}, dataset: {}, classList: { add() {}, remove() {}, toggle() {} },
-      setAttribute() {}, focus() {}, querySelectorAll() { return []; },
+      setAttribute() {}, focus() {}, scrollIntoView() {}, querySelectorAll() { return []; },
     });
     return nodes.get(selector);
   }
@@ -981,17 +981,38 @@ test("older meeting events and RPC replies cannot overwrite newer notes or summa
 });
 
 
-test("meeting opens the notebook first with background transcript and no fixed transcript toolbar", async () => {
+test("meeting opens the notebook first and keeps the transcript toggle outside the scroll area", async () => {
   const h = harness();
   await flush();
   showMeeting(h);
   assert.equal(h.element("#your-notes-panel").hidden, false);
   assert.equal(h.element("#enhanced-notes-panel").hidden, true);
-  assert.equal(h.element("#transcript-drawer").hidden, true);
-  assert.equal(h.element("#session-tools").hidden, true);
+  const drawer = h.element("#transcript-drawer");
+  const footer = h.element("#session-tools");
+  const toggle = h.element("#toggle-transcript");
+  assert.equal(drawer.hidden, true);
+  assert.equal(footer.hidden, false);
   const html = h.element("#content").innerHTML;
   assert.ok(html.indexOf('class="meeting-notebook"') < html.indexOf('class="meeting-transcript"'));
   assert.ok(html.indexOf('id="transcript-drawer"') < html.indexOf('id="copy-transcript"'));
+  assert.doesNotMatch(html, /id="toggle-transcript"/);
+  assert.match(footer.innerHTML, /id="toggle-transcript" aria-controls="transcript-drawer"/);
+
+  let focused = false, scrolled = false;
+  drawer.focus = () => { focused = true; };
+  drawer.scrollIntoView = () => { scrolled = true; };
+  toggle.onclick();
+  assert.equal(drawer.hidden, false);
+  assert.equal(toggle.textContent, "Hide transcript");
+  assert.equal(focused, true);
+  assert.equal(scrolled, true);
+  toggle.onclick();
+  assert.equal(drawer.hidden, true);
+  assert.equal(toggle.textContent, "Show transcript");
+  assert.equal(footer.hidden, false);
+
+  vm.runInContext('navigate("history")', h.context);
+  assert.equal(footer.hidden, true);
 });
 
 test("raw transcription opens its transcript visibly and keeps its original workflow first", async () => {
@@ -1040,6 +1061,46 @@ test("enhancement opens enhanced notes after completion while preserving the ori
   h.element("#your-notes-tab").onclick();
   assert.equal(h.element("#your-notes-panel").hidden, false);
   assert.equal(h.element("#meeting-notes").value, "Original outline");
+});
+
+test("live enhanced notes update the current notebook and restore saved notes after cancellation", async () => {
+  const h = harness({ snapshot: { meetingSummary: summaryReady }, deferActions: ["summarizeMeeting"] });
+  await flush();
+  const original = { notes: "Launch date?", summary: "Previous recap", revision: 1 };
+  showMeeting(h, "meeting", original);
+  const generating = h.element("#summarize-meeting").onclick();
+  await flush();
+  const request = h.requests.findLast(r => r.action === "summarizeMeeting");
+  const active = { ...summaryReady, busy: true, sessionId: "meeting" };
+  h.window.receive({ type: "meetingSummary", data: active });
+  assert.match(h.element("#enhanced-notes-tab").textContent, /live/);
+  h.element("#enhanced-notes-tab").onclick();
+  assert.match(h.element("#meeting-summary").textContent, /Waiting for the first notes/);
+
+  h.window.receive({ type: "meetingSummary", data: { ...active, revision: 2, preview: "Launch date?\n- **Wednesday**" } });
+  assert.match(h.element("#meeting-summary").innerHTML, /<strong>Wednesday<\/strong>/);
+  assert.equal(h.element("#copy-meeting").disabled, true);
+  assert.equal(h.element("#export-meeting").disabled, true);
+  assert.equal(h.element("#edit-enhanced-notes").disabled, true);
+  assert.equal(vm.runInContext("selected.meeting.summary", h.context), "Previous recap");
+  vm.runInContext(`
+    insertSegment = () => {};
+    applySnapshot({ meetingSummary: { revision: 1, busy: true, sessionId: "meeting" } });
+  `, h.context);
+  assert.match(h.element("#meeting-summary").innerHTML, /<strong>Wednesday<\/strong>/);
+
+  showMeeting(h, "elsewhere", { summary: "Another recap" });
+  h.element("#enhanced-notes-tab").onclick();
+  h.window.receive({ type: "meetingSummary", data: { ...active, revision: 3, preview: "Launch date?\n- Wednesday\n- Book a room" } });
+  assert.match(h.element("#meeting-summary").innerHTML, /Another recap/);
+  showMeeting(h, "meeting", original);
+  assert.match(h.element("#meeting-summary").innerHTML, /Book a room/);
+
+  h.window.receive({ type: "meetingSummary", data: { ...summaryReady, revision: 4 } });
+  h.window.receive({ type: "reply", data: { id: request.id, error: "context canceled" } });
+  await generating;
+  assert.match(h.element("#meeting-summary").innerHTML, /Previous recap/);
+  assert.equal(h.element("#copy-meeting").disabled, false);
 });
 
 test("enhancement completion never hides active typing or a newer original draft", async () => {

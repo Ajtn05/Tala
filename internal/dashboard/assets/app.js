@@ -37,6 +37,7 @@ function icon(name) {
     link: '<path d="M10 13a5 5 0 0 0 7 .1l3-3a5 5 0 0 0-7.1-7.1l-1.7 1.7M14 11a5 5 0 0 0-7-.1l-3 3a5 5 0 0 0 7.1 7.1l1.7-1.7"/>',
     check: '<path d="m5 12 4 4L19 6"/>',
     back: '<path d="m11 6-6 6 6 6M5 12h14"/>',
+    more: '<path d="M5 12h.01M12 12h.01M19 12h.01" stroke-width="3"/>',
   };
   return `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.file}</svg>`;
 }
@@ -324,10 +325,15 @@ window.receive = function (event) {
     return;
   }
   if (event.type === "meetingSummary") {
-    state.meetingSummary = d || {};
+    const previous = state.meetingSummary, next = latestMeetingSummary(d);
+    if (next === previous) return;
+    const previewUpdate = next.busy && previous.busy && next.sessionId === previous.sessionId && next.preview !== previous.preview;
+    state.meetingSummary = next;
     syncMeetingWorkspace();
-    updateMeetingProviderControls();
-    if (view === "new") renderHomeRecording();
+    if (!previewUpdate) {
+      updateMeetingProviderControls();
+      if (view === "new") renderHomeRecording();
+    }
     return;
   }
   if (event.type === "meetingProviders") {
@@ -391,9 +397,12 @@ window.receive = function (event) {
       .catch(error);
   }
 };
+function latestMeetingSummary(summary) {
+  return summary && (summary.revision || 0) >= (state.meetingSummary.revision || 0) ? summary : state.meetingSummary;
+}
 function applySnapshot(s) {
   if (!s) return;
-  Object.assign(state, s);
+  Object.assign(state, s, { meetingSummary: latestMeetingSummary(s.meetingSummary) });
   syncNavigation();
   if (!selected && view === "new") {
     const last = storage.getItem("selectedSession");
@@ -408,7 +417,7 @@ async function refreshSessions() {
   try {
     const s = await rpc("snapshot");
     state.sessions = s.sessions || [];
-    state.meetingSummary = s.meetingSummary || state.meetingSummary;
+    state.meetingSummary = latestMeetingSummary(s.meetingSummary);
     syncNavigation();
     if (view === "history") renderHistory();
     if (view === "new") renderHomeSessions();
@@ -457,10 +466,10 @@ function render() {
     })[view] || renderNew
   )();
 }
-function page(html) {
+function page(html, extraClass = "") {
   $("#session-tools").hidden = true;
   $("#session-tools").innerHTML = "";
-  content.innerHTML = `<div class="page ${view === "new" ? "home-page" : view === "session" ? "session-page" : ""}">${html}</div>`;
+  content.innerHTML = `<div class="page ${view === "new" ? "home-page" : view === "session" ? "session-page" : ""} ${extraClass}">${html}</div>`;
 }
 function rows(sessions) {
   return sessions
@@ -1256,53 +1265,76 @@ function sessionMetaLabel(session) {
 function renderSession() {
   if (!selected) return;
   const s = selected;
-  if (!transcriptVisibility.has(s.id)) transcriptVisibility.set(s.id, !isMeetingSession(s));
+  const notesFirst = isMeetingSession(s);
+  if (!transcriptVisibility.has(s.id)) transcriptVisibility.set(s.id, !notesFirst);
   const sourceLabel = s.mediaPath ? "Open media" : /^https?:\/\//.test(s.source) ? "Open media URL" : "Open transcript folder";
+  const shareNotes = '<button id="copy-meeting">Copy notes</button><button id="export-meeting">Export Markdown…</button>';
+  const sourceActions = `${s.mediaPath ? '<button id="review-media">Play media</button>' : ""}<button id="open-source">${sourceLabel}</button>`;
+  const deleteAction = '<button id="delete-session" class="danger">Delete session</button>';
+  const back = `<button id="back-from-transcript" class="text-button">${icon("back")} Back</button>`;
+  const sessionNavigation = notesFirst ? `<div class="notebook-session-nav">${back}
+    <details class="notebook-session-actions" id="notebook-session-actions">
+      <summary aria-label="Session actions" title="Session actions">${icon("more")}</summary>
+      <div class="notebook-action-list">
+        <div>${shareNotes}</div>
+        <div>${sourceActions}<button id="notebook-settings">Meeting notes settings</button><button id="notebook-usage" hidden>Manage usage</button></div>
+        <div>${deleteAction}</div>
+      </div>
+    </details>
+  </div>` : back;
   const notebook = `<section class="meeting-notebook" aria-label="Meeting notes">
       <div class="notebook-toolbar">
         <div class="notebook-tabs" role="tablist" aria-label="Notes version">
           <button id="your-notes-tab" role="tab" aria-controls="your-notes-panel">Your notes</button>
           <button id="enhanced-notes-tab" role="tab" aria-controls="enhanced-notes-panel">Enhanced notes</button>
         </div>
-        <button id="summarize-meeting" class="primary">Enhance notes</button>
+        <div class="notebook-toolbar-actions">
+          <button id="preview-meeting-notes">Preview Markdown</button>
+          <button id="edit-enhanced-notes" hidden>Edit enhanced notes</button>
+          <button id="summarize-meeting" class="primary">Enhance notes</button>
+        </div>
       </div>
-      <p id="meeting-summary-status" class="meeting-status enhancement-status" role="status"></p>
-      <div class="meeting-setup" id="meeting-summary-setup" hidden><button id="download-meeting-model">Download notes model</button><button id="manage-meeting-usage" hidden>Manage usage</button><button id="meeting-model-settings" class="text-button">Meeting notes settings</button></div>
-      <button id="cancel-meeting-summary" hidden>Cancel enhancement</button>
+      <div class="enhancement-feedback">
+        <p id="meeting-summary-status" class="meeting-status" role="status"></p>
+        <div class="meeting-setup" id="meeting-summary-setup" hidden><button id="download-meeting-model">Download notes model</button><button id="manage-meeting-usage" hidden>Manage usage</button><button id="meeting-model-settings" class="text-button">Meeting notes settings</button></div>
+        <button id="cancel-meeting-summary" hidden>Cancel enhancement</button>
+      </div>
       <div id="your-notes-panel" class="notebook-canvas" role="tabpanel" aria-labelledby="your-notes-tab">
-        <div class="notebook-preview-control"><button id="preview-meeting-notes">Preview Markdown</button></div>
         <label class="visually-hidden" for="meeting-notes">Your meeting notes</label>
         <textarea id="meeting-notes" aria-describedby="meeting-notes-status" placeholder="What stands out?\n\nJot down thoughts, questions, and next steps. Markdown shortcuts include # for headings and - [ ] for tasks."></textarea>
         <div id="meeting-notes-preview" class="meeting-summary" hidden></div>
         <div class="notebook-save-row"><p id="meeting-notes-status" class="meeting-status" role="status"></p><button id="save-meeting-notes">Save notes</button></div>
       </div>
       <div id="enhanced-notes-panel" class="notebook-canvas" role="tabpanel" aria-labelledby="enhanced-notes-tab" hidden>
-        <div class="enhanced-note-actions"><p id="enhanced-notes-status" class="meeting-status" role="status"></p><button id="edit-enhanced-notes">Edit enhanced notes</button><button id="preview-enhanced-notes" hidden>Preview Markdown</button><button id="discard-enhanced-notes" hidden>Discard edits</button><button id="save-enhanced-notes" hidden>Save enhanced notes</button></div>
+        <div class="enhanced-note-actions"><p id="enhanced-notes-status" class="meeting-status" role="status"></p><button id="preview-enhanced-notes" hidden>Preview Markdown</button><button id="discard-enhanced-notes" hidden>Discard edits</button><button id="save-enhanced-notes" hidden>Save enhanced notes</button></div>
         <div id="meeting-summary" class="meeting-summary"></div>
         <label class="visually-hidden" for="enhanced-meeting-notes">Edit enhanced meeting notes</label>
         <textarea id="enhanced-meeting-notes" hidden></textarea>
       </div>
-      <div class="meeting-share"><button id="copy-meeting">Copy notes</button><button id="export-meeting">Export Markdown…</button></div>
+      ${notesFirst ? "" : `<div class="meeting-share">${shareNotes}</div>`}
     </section>`;
-  const transcript = `<section class="meeting-transcript" aria-label="Meeting transcript">
-      <div class="transcript-drawer-heading"><div><h2>Transcript</h2><p id="transcript-capture-status" role="status"></p></div><button id="toggle-transcript" aria-controls="transcript-drawer" aria-expanded="false">Show transcript</button></div>
-      <div id="transcript-drawer" hidden>
-        <div class="viewer-toolbar" role="toolbar" aria-label="Transcript display">
-          <select id="display-mode" aria-label="Transcript display"><option value="clean">Text only · paragraphs</option><option value="continuous">Text only · single line</option><option value="timestamps">Timestamps</option><option value="sources">Sources + timestamps</option></select>
-          <div class="font-controls"><button id="font-less" aria-label="Decrease font size">A−</button><button id="font-more" aria-label="Increase font size">A+</button></div>
-          <label><input id="auto-scroll" type="checkbox" ${autoScroll ? "checked" : ""}>Auto-scroll</label>
-          <input id="transcript-search" type="search" placeholder="Find in transcript" aria-label="Find in transcript">
-        </div>
-        <div id="transcript-scroll"><div id="transcript" class="transcript ${mode}" style="--transcript-size:${font}px"><div class="transcript-empty" id="transcript-empty">${s.status === "processing" || (state.live.active && s.id === state.live.sessionId) ? "Listening in the background…" : "No transcript segments."}</div></div><div id="no-matches" class="empty" role="status" hidden>No matching text.</div></div>
-        <div class="transcript-tools" role="toolbar" aria-label="Transcript export"><span id="segment-count" class="export-status"></span><div class="export-controls"><button id="copy-transcript">Copy transcript</button><label for="export-format">Format</label><select id="export-format"><option value="txt">TXT</option><option value="md">Markdown</option><option value="srt">SRT</option><option value="vtt">VTT</option></select><button id="export-transcript">Export transcript…</button></div></div>
+  const transcript = `<section id="transcript-drawer" class="meeting-transcript" aria-label="Transcript" tabindex="-1" hidden>
+      <div class="viewer-toolbar" role="toolbar" aria-label="Transcript display">
+        <select id="display-mode" aria-label="Transcript display"><option value="clean">Text only · paragraphs</option><option value="continuous">Text only · single line</option><option value="timestamps">Timestamps</option><option value="sources">Sources + timestamps</option></select>
+        <div class="font-controls"><button id="font-less" aria-label="Decrease font size">A−</button><button id="font-more" aria-label="Increase font size">A+</button></div>
+        <label><input id="auto-scroll" type="checkbox" ${autoScroll ? "checked" : ""}>Auto-scroll</label>
+        <input id="transcript-search" type="search" placeholder="Find in transcript" aria-label="Find in transcript">
       </div>
+      <div id="transcript-scroll"><div id="transcript" class="transcript ${mode}" style="--transcript-size:${font}px"><div class="transcript-empty" id="transcript-empty">${s.status === "processing" || (state.live.active && s.id === state.live.sessionId) ? "Listening in the background…" : "No transcript segments."}</div></div><div id="no-matches" class="empty" role="status" hidden>No matching text.</div></div>
+      <div class="transcript-tools" role="toolbar" aria-label="Transcript export"><span id="segment-count" class="export-status"></span><div class="export-controls"><button id="copy-transcript">Copy transcript</button><label for="export-format">Format</label><select id="export-format"><option value="txt">TXT</option><option value="md">Markdown</option><option value="srt">SRT</option><option value="vtt">VTT</option></select><button id="export-transcript">Export transcript…</button></div></div>
     </section>`;
-  page(`<button id="back-from-transcript" class="text-button">${icon("back")} Back</button>
+  page(`${sessionNavigation}
     <div id="recording-banner"></div>
     <div class="session-heading"><h1 id="session-title">${escape(s.title)}</h1><button id="rename-session" class="icon-button" aria-label="Rename session" title="Rename session">${icon("edit")}</button></div>
     <div class="session-meta" id="session-meta" title="${escape(s.source + (sessionModelName(s) ? " · " + sessionModelName(s) : ""))}">${escape(sessionMetaLabel(s))}</div>
-    <div class="session-actions">${s.mediaPath ? '<button id="review-media">Play media</button>' : ""}<button id="open-source">${sourceLabel}</button><button id="delete-session" class="danger">Delete session</button></div>
-    <div class="meeting-layout ${isMeetingSession(s) ? "notes-first" : "transcript-first"}">${isMeetingSession(s) ? notebook + transcript : transcript + notebook}</div>`);
+    ${notesFirst ? "" : `<div class="session-actions">${sourceActions}${deleteAction}</div>`}
+    <div class="meeting-layout ${notesFirst ? "notes-first" : "transcript-first"}">${notesFirst ? notebook + transcript : transcript + notebook}</div>`, notesFirst ? "notebook-session" : "");
+  const sessionTools = $("#session-tools");
+  sessionTools.innerHTML = `<div class="page session-page ${notesFirst ? "notebook-session" : ""} transcript-drawer-heading">
+      <div><h2>Transcript</h2><p id="transcript-capture-status" role="status"></p></div>
+      <button id="toggle-transcript" aria-controls="transcript-drawer" aria-expanded="false">Show transcript</button>
+    </div>`;
+  sessionTools.hidden = false;
   s.segments.forEach(insertSegment);
   $("#back-from-transcript").onclick = () => {
     storage.removeItem("selectedSession");
@@ -1310,7 +1342,15 @@ function renderSession() {
   };
   updateRecordingBanner();
   syncSessionTools();
-  $("#toggle-transcript").onclick = () => setTranscriptVisible(!transcriptIsVisible());
+  $("#toggle-transcript").onclick = () => {
+    const visible = !transcriptIsVisible();
+    setTranscriptVisible(visible);
+    if (visible) {
+      const drawer = $("#transcript-drawer");
+      drawer.focus({ preventScroll: true });
+      drawer.scrollIntoView({ block: "nearest" });
+    }
+  };
   $("#display-mode").value = mode;
   $("#display-mode").onchange = (e) => {
     mode = e.target.value;
@@ -1340,7 +1380,26 @@ function renderSession() {
     } catch (e) { error(e); }
   };
   $("#rename-session").onclick = renameSession;
+  if (notesFirst) {
+    const actions = $("#notebook-session-actions");
+    $("#notebook-settings").onclick = openMeetingSettings;
+    $("#notebook-usage").onclick = () => action("manageChatGPTUsage");
+    actions.onclick = (event) => {
+      if (event.target.closest("button")) closeNotebookActions(actions);
+    };
+    actions.onfocusout = (event) => {
+      if (event.relatedTarget && !actions.contains(event.relatedTarget)) actions.open = false;
+    };
+  }
   bindMeetingWorkspace();
+}
+function closeNotebookActions(actions) {
+  actions.open = false;
+  actions.querySelector("summary").focus();
+}
+function openMeetingSettings() {
+  navigate("settings");
+  $("#meeting-provider")?.focus();
 }
 function applyMeeting(id, meeting) {
   if (!meeting || selected?.id !== id) return false;
@@ -1450,10 +1509,7 @@ function bindMeetingWorkspace() {
     await changeInstalledModel($("#download-meeting-model"), "downloadModel", modelId);
     syncMeetingWorkspace();
   };
-  $("#meeting-model-settings").onclick = () => {
-    navigate("settings");
-    $("#meeting-provider")?.focus();
-  };
+  $("#meeting-model-settings").onclick = openMeetingSettings;
   $("#manage-meeting-usage").onclick = () => action("manageChatGPTUsage");
   const share = async (name) => {
     const tab = notebookTab(id);
@@ -1608,9 +1664,9 @@ function openNotebookLink(event) {
   if (notebookMarkdown.validateLink(url)) return action("openSignIn", { url, browser: "other" });
 }
 function showNotebookPreview(node, source, placeholder) {
-  if (node.dataset.source === source) return;
-  node.dataset.source = source;
   const empty = !source.trim();
+  if (node.dataset.source === source && (!empty || node.textContent === placeholder)) return;
+  node.dataset.source = source;
   node.classList.toggle("is-empty", empty);
   if (empty) node.textContent = placeholder;
   else node.innerHTML = notebookMarkdown.render(source);
@@ -1627,7 +1683,9 @@ function syncMeetingWorkspace() {
   $("#save-meeting-notes").textContent = saving ? "Saving…" : "Save notes";
   $("#meeting-notes-status").textContent = saving ? "Saving notes…" : dirty ? "Unsaved changes · draft kept on this device" : meeting.notes ? "Original notes saved on this device" : "Your notes stay yours. ⌘Enter to save.";
   const summary = state.meetingSummary || {};
-  const currentBusy = generatingMeetingSummaries.has(id) || (!!summary.busy && summary.sessionId === id);
+  const streaming = !!summary.busy && summary.sessionId === id;
+  const currentBusy = generatingMeetingSummaries.has(id) || streaming;
+  const tab = notebookTab(id), editing = !currentBusy && editingEnhancedNotes.has(id);
   const anyBusy = generatingMeetingSummaries.size > 0 || summary.busy;
   const importBusy = state.jobs.some((job) => ["preparing", "transcribing"].includes(job.state));
   const modelsBusy = !!state.modelInventory.busy;
@@ -1639,34 +1697,56 @@ function syncMeetingWorkspace() {
   const model = summary.modelId === state.cleanupModel?.id ? state.cleanupModel : null;
   const downloading = !!summary.modelId && transfer?.id === summary.modelId;
   const usingChatGPT = summary.provider === "chatgpt";
+  const notebookUsage = $("#notebook-usage");
+  if (notebookUsage) notebookUsage.hidden = !usingChatGPT;
+  generate.title = summary.ready && summary.provider
+    ? usingChatGPT ? `Using ChatGPT plan · ${summary.modelId}` : `Uses ${summary.modelId} to process your notes and transcript text online.`
+    : "";
   const setup = usingChatGPT ? "Choose a connected ChatGPT account and model in Meeting notes settings." : summary.provider ? `Save an API key for ${summary.providerName} in Meeting notes settings.` : downloading
     ? `Downloading notes model · ${formatBytes(transfer.bytes)}${model ? " of " + formatBytes(model.bytes) : ""}`
     : `Download the local notes model${model ? " · " + formatBytes(model.bytes) : ""} to get started.`;
-  $("#meeting-summary-status").textContent = currentBusy ? "Filling in your notes from the conversation…" : anyBusy ? "Another meeting’s notes are being enhanced." : summary.usageLimited ? "ChatGPT plan usage limit reached. Review your limits in ChatGPT settings, then refresh your account in Meeting notes settings." : enhancedDirty ? "Save or discard enhanced edits before enhancing again." : meetingSummaryNotices.has(id) ? meetingSummaryNotices.get(id) : active ? "Keep taking notes. Enhance them when the conversation ends." : processing || importBusy ? "Wait for transcription to finish." : modelsBusy ? "Wait for the model operation to finish." : !summary.available ? "Choose a provider in Meeting notes settings." : !summary.ready ? setup : !selected.segments.length ? "The conversation transcript will provide context for your notes." : meeting.summaryStale || (meeting.summary && dirty) ? "Your notes or transcript changed. Re-enhance to include the latest details." : usingChatGPT ? `Using ChatGPT plan · ${summary.modelId}` : summary.provider ? `Uses ${summary.modelId} to process your notes and transcript text online.` : meeting.summary ? "Your original notes are always available in Your notes." : "Enhance your notes with details from the conversation.";
-  $("#meeting-summary-setup").hidden = currentBusy || (!!summary.ready && !summary.provider);
-  $("#manage-meeting-usage").hidden = !usingChatGPT;
+  const needsSetup = !currentBusy && (!summary.ready || summary.usageLimited) && !active;
+  const summaryStatus = currentBusy ? (tab === "notes" ? "Enhancing… Open Enhanced notes to watch the draft update." : "Enhancing… This preview updates as notes are generated.")
+    : anyBusy ? "Another meeting’s notes are being enhanced."
+    : summary.usageLimited ? "ChatGPT plan usage limit reached. Review your limits, then refresh your account in Meeting notes settings."
+    : enhancedDirty ? "Save or discard enhanced edits before enhancing again."
+    : meetingSummaryNotices.has(id) ? meetingSummaryNotices.get(id)
+    : active ? ""
+    : processing || importBusy ? "Wait for transcription to finish."
+    : modelsBusy ? "Wait for the model operation to finish."
+    : !summary.available ? "Choose a provider in Meeting notes settings."
+    : !summary.ready ? setup
+    : meeting.summaryStale || (meeting.summary && dirty) ? "Your notes or transcript changed. Re-enhance to include the latest details."
+    : !selected.segments.length && !meeting.summary ? "Enhancement needs a transcript."
+    : "";
+  const statusNode = $("#meeting-summary-status");
+  if (statusNode.textContent !== summaryStatus) statusNode.textContent = summaryStatus;
+  $("#meeting-summary-setup").hidden = !needsSetup;
+  $("#manage-meeting-usage").hidden = !usingChatGPT || !summary.usageLimited;
   $("#manage-meeting-usage").classList.toggle("primary", !!summary.usageLimited);
   const download = $("#download-meeting-model");
   download.hidden = !!summary.provider || !summary.available || !summary.modelId;
   download.disabled = !!state.modelInventory.busy || active || anyBusy;
   download.textContent = downloading ? "Downloading…" : "Download notes model";
   $("#cancel-meeting-summary").hidden = !currentBusy || !summary.busy;
-  const tab = notebookTab(id), editing = editingEnhancedNotes.has(id);
   const previewing = previewingMeetingNotes.has(id);
   $("#your-notes-panel").hidden = tab !== "notes";
+  $("#your-notes-panel").tabIndex = previewing ? 0 : -1;
   $("#enhanced-notes-panel").hidden = tab !== "enhanced";
+  $("#enhanced-notes-panel").tabIndex = editing ? -1 : 0;
   for (const [value, selector] of [["notes", "#your-notes-tab"], ["enhanced", "#enhanced-notes-tab"]]) {
     $(selector).setAttribute("aria-selected", String(value === tab));
     $(selector).tabIndex = value === tab ? 0 : -1;
   }
-  $("#enhanced-notes-tab").textContent = enhancedDirty ? "Enhanced notes · unsaved" : enhancedNotesReady.has(id) ? "Enhanced notes · ready" : "Enhanced notes";
+  $("#enhanced-notes-tab").textContent = currentBusy ? "Enhanced notes · live" : enhancedDirty ? "Enhanced notes · unsaved" : enhancedNotesReady.has(id) ? "Enhanced notes · ready" : "Enhanced notes";
   const originalPreview = $("#meeting-notes-preview");
   notes.hidden = previewing;
   originalPreview.hidden = !previewing;
+  $("#preview-meeting-notes").hidden = tab !== "notes";
   $("#preview-meeting-notes").textContent = previewing ? "Edit Markdown" : "Preview Markdown";
   $("#preview-meeting-notes").disabled = !previewing && !meetingNotes().trim();
   if (tab === "notes" && previewing) showNotebookPreview(originalPreview, meetingNotes(), "Write some notes to preview them here.");
-  $("#edit-enhanced-notes").hidden = editing;
+  $("#edit-enhanced-notes").hidden = tab !== "enhanced" || editing || !meeting.summary;
   $("#edit-enhanced-notes").disabled = currentBusy || !meeting.summary;
   $("#preview-enhanced-notes").hidden = !editing;
   $("#discard-enhanced-notes").hidden = !enhancedDirty;
@@ -1678,9 +1758,14 @@ function syncMeetingWorkspace() {
   enhanced.disabled = currentBusy;
   const summaryNode = $("#meeting-summary");
   summaryNode.hidden = editing;
-  if (tab === "enhanced" && !editing) showNotebookPreview(summaryNode, enhancedMeetingNotes(), "Your enhanced notes will appear here. Add your own notes, then choose Enhance notes.");
-  $("#enhanced-notes-status").textContent = enhancedSaving ? "Saving enhanced notes…" : enhancedDirty ? "Unsaved edits · draft kept on this device" : meeting.summary ? "Enhanced notes · review the details against your conversation" : "Your original notes will remain available.";
-  const canShare = tab === "enhanced" ? !!enhancedMeetingNotes() : !!meetingNotes();
+  if (tab === "enhanced" && !editing) {
+    const preview = streaming ? summary.preview || "" : "";
+    showNotebookPreview(summaryNode, currentBusy ? preview : enhancedMeetingNotes(), currentBusy
+      ? "Waiting for the first notes…"
+      : "Your enhanced notes will appear here. Add your own notes, then choose Enhance notes.");
+  }
+  $("#enhanced-notes-status").textContent = enhancedSaving ? "Saving enhanced notes…" : enhancedDirty ? "Unsaved edits · draft kept on this device" : "";
+  const canShare = tab === "enhanced" ? !currentBusy && !!enhancedMeetingNotes() : !!meetingNotes();
   $("#copy-meeting").disabled = saving || enhancedSaving || !canShare;
   $("#copy-meeting").textContent = tab === "enhanced" ? "Copy enhanced notes" : "Copy your notes";
   $("#export-meeting").disabled = saving || enhancedSaving || !canShare;
@@ -2371,6 +2456,10 @@ document.addEventListener("drop", (event) => {
   action("droppedFiles");
 });
 window.addEventListener("blur", clearFileDrag);
+document.addEventListener("pointerdown", (event) => {
+  const actions = $("#notebook-session-actions[open]");
+  if (actions && !actions.contains(event.target)) actions.open = false;
+});
 document.addEventListener("keydown", (e) => {
   if (e.metaKey && e.key.toLowerCase() === "n") {
     e.preventDefault();
@@ -2387,7 +2476,11 @@ document.addEventListener("keydown", (e) => {
       $("#history-query").focus();
     }
   }
-  if (e.key === "Escape") $("#error").hidden = true;
+  if (e.key === "Escape") {
+    const actions = $("#notebook-session-actions");
+    if (actions?.open) closeNotebookActions(actions);
+    $("#error").hidden = true;
+  }
 });
 setInterval(() => {
   if (!state.live.active) return;

@@ -151,7 +151,7 @@ func (c *Controller) ConfigureMeetingProvider(providerID, model, key, account st
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.meetingTarget = meetingTarget{Provider: providerID, Model: model, Account: account}
-	c.emitLocked("meetingSummary", c.meetingSummaryLocked())
+	c.emitMeetingSummaryLocked()
 	return c.meetingProvidersLocked(), nil
 }
 
@@ -173,7 +173,7 @@ func (c *Controller) RemoveMeetingProviderKey(providerID string) (any, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.meetingKeyReady[providerID] = false
-	c.emitLocked("meetingSummary", c.meetingSummaryLocked())
+	c.emitMeetingSummaryLocked()
 	return c.meetingProvidersLocked(), nil
 }
 
@@ -212,7 +212,7 @@ func (c *Controller) ChangeChatGPTAccount(operation, account string, openBrowser
 	ctx, cancel := context.WithTimeout(c.ctx, timeout)
 	done := make(chan struct{})
 	c.chatGPTDone, c.chatGPTCancel = done, cancel
-	c.emitLocked("meetingSummary", c.meetingSummaryLocked())
+	c.emitMeetingSummaryLocked()
 	c.mu.Unlock()
 	defer cancel()
 
@@ -237,7 +237,7 @@ func (c *Controller) ChangeChatGPTAccount(operation, account string, openBrowser
 	if err == nil {
 		delete(c.chatGPTLimited, result.Selected)
 	}
-	c.emitLocked("meetingSummary", c.meetingSummaryLocked())
+	c.emitMeetingSummaryLocked()
 	result.meetingProviderState = c.meetingProvidersLocked()
 	c.emitLocked("meetingProviders", result.meetingProviderState)
 	close(done)
